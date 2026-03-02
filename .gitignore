@@ -1,0 +1,124 @@
+# ──────────────────────────────────────────────
+# Xcode / Swift
+# ──────────────────────────────────────────────
+
+# Build artifacts
+build/
+DerivedData/
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+
+# Index & logs
+*.xcodeproj/project.xcworkspace/xcuserdata/
+IndexStoreDB/
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Playgrounds
+timeline.xctimeline
+playground.xcworkspace
+
+# Swift Package Manager
+.build/
+.swiftpm/xcode/package.xcworkspace/contents.xcworkspacedata
+Package.resolved
+
+# CocoaPods (just in case)
+Pods/
+
+# Carthage (just in case)
+Carthage/Build/
+Carthage/Checkouts/
+
+# ──────────────────────────────────────────────
+# macOS
+# ──────────────────────────────────────────────
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+# ──────────────────────────────────────────────
+# AI Agents & Coding Assistants
+# ──────────────────────────────────────────────
+
+# OpenCode / Sisyphus
+.sisyphus/
+.opencode/
+opencode.json
+
+# MCP (Model Context Protocol)
+.mcp.json
+.xcodebuildmcp/
+
+# Cursor
+.cursor/
+.cursorignore
+.cursorules
+
+# Claude Code / Anthropic
+.claude/
+CLAUDE.md
+claude.md
+
+# GitHub Copilot
+.copilot/
+.github/copilot-instructions.md
+
+# Aider
+.aider*
+.aider.conf.yml
+.aider.tags.cache.v3/
+
+# Continue
+.continue/
+.continuerc.json
+
+# Codeium / Windsurf
+.codeium/
+.windsurf/
+.windsurfrules
+
+# Cline
+.cline/
+.clinerules
+.clineignore
+
+# Roo Code
+.roo/
+.roorules*
+
+# Tabnine
+.tabnine_root
+
+# Codex
+codex.md
+AGENTS.md
+
+# Augment
+.augment/
+augment-guidelines.md
+
+# Ruff (Python linter, likely from AI tooling)
+.ruff_cache/
+
+# ──────────────────────────────────────────────
+# IDE & Editor
+# ──────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ──────────────────────────────────────────────
+# Secrets & Environment
+# ──────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+*.key
+*.pem

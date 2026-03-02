@@ -1,27 +1,19 @@
-//___FILEHEADER___
+//
+//  OpenCody___An_OpenCode_ClientApp.swift
+//  OpenCody - An OpenCode Client
+//
 
 import SwiftUI
-import SwiftData
 
 @main
-struct ___PACKAGENAME:identifier___App: App {
-    var sharedModelContainer: ModelContainer = {
-        let schema = Schema([
-            Item.self,
-        ])
-        let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
-
-        do {
-            return try ModelContainer(for: schema, configurations: [modelConfiguration])
-        } catch {
-            fatalError("Could not create ModelContainer: \(error)")
-        }
-    }()
+struct OpenCody___An_OpenCode_ClientApp: App {
+    init() {
+        BackgroundRefreshService.shared.registerTasks()
+    }
 
     var body: some Scene {
         WindowGroup {
             ContentView()
         }
-        .modelContainer(sharedModelContainer)
     }
 }

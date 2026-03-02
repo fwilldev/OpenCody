@@ -1,12 +1,8 @@
-//___FILEHEADER___
+import XCTest
+@testable import OpenCody___An_OpenCode_Client
 
-import Testing
-@testable import ___VARIABLE_productName:identifier___
-
-struct ___FILEBASENAME:identifier___ {
-
-    @Test func example() async throws {
-        // Write your test here and use APIs like `#expect(...)` to check expected conditions.
+final class OpenCody___An_OpenCode_ClientTests: XCTestCase {
+    func testExample() throws {
+        XCTAssertTrue(true)
     }
-
 }
