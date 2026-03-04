@@ -10,6 +10,7 @@ import SwiftUI
 struct SessionDiffView: View {
     let session: Session
     let apiClient: APIClient
+    let showsCloseButton: Bool
 
     @Environment(\.dismiss) private var dismiss
     @State private var diffs: [FileDiff] = []
@@ -55,9 +56,11 @@ struct SessionDiffView: View {
             .navigationTitle("Session Diff")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Close") { dismiss() }
-                        .foregroundStyle(Theme.Colors.silver)
+                if showsCloseButton {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Close") { dismiss() }
+                            .foregroundStyle(Theme.Colors.silver)
+                    }
                 }
                 ToolbarItem(placement: .primaryAction) {
                     Text("\(diffs.count) file\(diffs.count == 1 ? "" : "s")")
@@ -72,13 +75,31 @@ struct SessionDiffView: View {
         }
     }
 
+    init(session: Session, apiClient: APIClient, showsCloseButton: Bool = true) {
+        self.session = session
+        self.apiClient = apiClient
+        self.showsCloseButton = showsCloseButton
+    }
+
     private func loadDiff() async {
         isLoading = true
         error = nil
         do {
             let api = SessionAPI(client: apiClient)
+            #if DEBUG
+            print("[SessionDiffView] loading diff for session=\(session.id)")
+            #endif
             diffs = try await api.diff(id: session.id)
+            #if DEBUG
+            print("[SessionDiffView] loaded \(diffs.count) diffs")
+            for d in diffs {
+                print("[SessionDiffView]   file=\(d.file) status=\(d.status) +\(d.additions) -\(d.deletions)")
+            }
+            #endif
         } catch {
+            #if DEBUG
+            print("[SessionDiffView] ERROR: \(error)")
+            #endif
             self.error = error.localizedDescription
         }
         isLoading = false
@@ -108,6 +129,9 @@ private struct FileDiffSection: View {
                         .foregroundStyle(Theme.Colors.cloud)
                         .lineLimit(1)
                     Spacer()
+                    Text(diff.status.label)
+                        .font(.caption2.weight(.medium))
+                        .foregroundStyle(diff.status.color)
                     HStack(spacing: 6) {
                         Text("+\(diff.additions)")
                             .font(.caption2.weight(.semibold))
@@ -124,8 +148,14 @@ private struct FileDiffSection: View {
             .buttonStyle(.plain)
 
             if isExpanded {
-                // Render diff lines
-                DiffContentView(before: diff.before, after: diff.after)
+                if diff.additions + diff.deletions > 5000 {
+                    Text("Too many changes to display (\(diff.additions + diff.deletions) lines)")
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(Theme.Colors.smoke)
+                        .padding(Theme.Spacing.md)
+                } else {
+                    DiffContentView(diff: diff)
+                }
             }
 
             Divider()
@@ -137,30 +167,34 @@ private struct FileDiffSection: View {
 // MARK: - DiffContentView
 
 private struct DiffContentView: View {
-    let before: String
-    let after: String
+    let diff: FileDiff
 
     // Build unified diff line annotations by comparing before/after
     private var diffLines: [(line: String, kind: DiffLineKind)] {
-        let afterLines = after.components(separatedBy: "\n")
-        let beforeLines = before.components(separatedBy: "\n")
+        switch diff.status {
+        case .added:
+            // Entire file is new — show all lines as added
+            return diff.after.components(separatedBy: "\n").map { line in ("+  " + line, DiffLineKind.added) }
+        case .deleted:
+            // Entire file was removed — show all lines as removed
+            return diff.before.components(separatedBy: "\n").map { line in ("-  " + line, DiffLineKind.removed) }
+        case .modified:
+            return buildModifiedDiff()
+        }
+    }
+
+    private func buildModifiedDiff() -> [(String, DiffLineKind)] {
+        let beforeLines = diff.before.components(separatedBy: "\n")
+        let afterLines = diff.after.components(separatedBy: "\n")
         let beforeSet = Set(beforeLines)
         let afterSet = Set(afterLines)
 
         var result: [(String, DiffLineKind)] = []
-        // Removed lines
         for line in beforeLines where !afterSet.contains(line) {
-            result.append(("-  " + line, .removed))
+            result.append(("-  " + line, DiffLineKind.removed))
         }
-        // Added lines
         for line in afterLines where !beforeSet.contains(line) {
-            result.append(("+  " + line, .added))
-        }
-        // Context (unchanged): show a sample of after content
-        if result.isEmpty {
-            for line in afterLines.prefix(30) {
-                result.append(("   " + line, .context))
-            }
+            result.append(("+  " + line, DiffLineKind.added))
         }
         return result
     }
@@ -178,6 +212,18 @@ private struct DiffContentView: View {
             }
         }
         .background(Theme.Colors.carbon)
+    }
+}
+
+// MARK: - FileDiffStatus + Color
+
+extension FileDiffStatus {
+    var color: Color {
+        switch self {
+        case .modified: return Theme.Colors.cyberBlue
+        case .added: return Theme.Colors.neonGreen
+        case .deleted: return Theme.Colors.hotPink
+        }
     }
 }
 

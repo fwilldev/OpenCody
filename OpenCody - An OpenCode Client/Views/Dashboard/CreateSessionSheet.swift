@@ -176,7 +176,7 @@ struct CreateSessionSheet: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .glassCard()
             } else {
-                ForEach(agents) { agent in
+                ForEach(agents.filter { !($0.hidden ?? false) }) { agent in
                     Button {
                         selectedAgent = agent
                     } label: {

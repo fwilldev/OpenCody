@@ -173,7 +173,7 @@ final class ConnectionManager {
         // 3. Create EventService and wire up event routing
         let eventService = EventService()
         let serverID = server.id
-        eventService.onEvent = { [weak self] event in
+        eventService.onEvent = { [weak self] (event: SSEEvent) in
             self?.routeEvent(event, serverID: serverID)
         }
 
@@ -241,7 +241,10 @@ final class ConnectionManager {
     /// Update the active directory filter used for SSE events.
     /// If changed, restarts SSE listening for the active server.
     func setActiveEventDirectory(_ directory: String?) {
-        let normalized = directory?.trimmingCharacters(in: .whitespacesAndNewlines)
+        var normalized = directory?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let value = normalized, !value.isEmpty, !value.hasPrefix("/") {
+            normalized = "/" + value
+        }
         guard normalized != activeEventDirectory else { return }
         activeEventDirectory = normalized
 

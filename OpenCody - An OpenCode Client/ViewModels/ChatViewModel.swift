@@ -98,6 +98,8 @@ final class ChatViewModel {
     @ObservationIgnored private var loadedMessageIDs: Set<String> = []
     /// Buffer for parts that arrived before their message via SSE.
     @ObservationIgnored private var pendingParts: [String: [Part]] = [:]
+    /// Buffer for deltas that arrived before their part via SSE.
+    @ObservationIgnored private var pendingDeltas: [String: [PartDeltaPayload]] = [:]
     /// Map tool call (messageID + callID) to question request.
     @ObservationIgnored private var questionRequestsByToolCall: [ToolCallKey: QuestionRequest] = [:]
     /// Map requestID to question request.
@@ -183,15 +185,8 @@ final class ChatViewModel {
         providerID: String? = nil,
         agent: String? = nil
     ) async {
-        #if DEBUG
-        print("[ChatVM] sendPrompt called — text='\(text.prefix(80))' session=\(session.id)")
-        #endif
-
         guard let client = connectionManager.activeAPIClient else {
             error = "No active server connection"
-            #if DEBUG
-            print("[ChatVM] sendPrompt ABORT — no active API client")
-            #endif
             return
         }
 
@@ -209,17 +204,57 @@ final class ChatViewModel {
                 agent: agent ?? selectedAgentID,
                 attachments: attachments
             )
-            #if DEBUG
-            print("[ChatVM] sendPrompt succeeded — waiting for SSE events")
-            #endif
             startFallbackPollingIfNeeded()
         } catch {
             // Reset isGenerating if the send call itself failed.
             isGenerating = false
             self.error = error.localizedDescription
-            #if DEBUG
-            print("[ChatVM] sendPrompt FAILED: \(error)")
-            #endif
+        }
+    }
+
+    /// Execute a slash command in the session.
+    /// The command name should NOT include the leading "/".
+    func executeCommand(name: String, arguments: String? = nil) async {
+        guard let client = connectionManager.activeAPIClient else {
+            error = "No active server connection"
+            return
+        }
+
+        // Show the command as a local user message for immediate feedback
+        let displayText = "/" + name + (arguments.map { " " + $0 } ?? "")
+        appendLocalUserMessage(text: displayText, attachments: [])
+        isGenerating = true
+        error = nil
+
+        do {
+            let api = CommandAPI(client: client)
+            try await api.execute(sessionID: session.id, name: name, arguments: arguments)
+            startFallbackPollingIfNeeded()
+        } catch {
+            isGenerating = false
+            self.error = error.localizedDescription
+        }
+    }
+
+    /// Execute a shell command in the session.
+    /// The response arrives via SSE events, similar to prompts and commands.
+    func executeShellCommand(command: String) async {
+        guard let client = connectionManager.activeAPIClient else {
+            error = "No active server connection"
+            return
+        }
+
+        appendLocalUserMessage(text: "$ " + command, attachments: [])
+        isGenerating = true
+        error = nil
+
+        do {
+            let api = SessionAPI(client: client)
+            try await api.shell(id: session.id, command: command, agent: selectedAgentID ?? "coder", providerID: selectedProviderID, modelID: selectedModelID)
+            startFallbackPollingIfNeeded()
+        } catch {
+            isGenerating = false
+            self.error = error.localizedDescription
         }
     }
 
@@ -290,6 +325,9 @@ final class ChatViewModel {
 
     /// Subscribe to SSE events for live message/part/permission updates.
     func startObservingEvents() {
+        // Scope SSE stream to this session's directory before subscribing
+        // so the stream restarts with the correct filter.
+        connectionManager.setActiveEventDirectory(session.directory)
         eventToken = connectionManager.subscribeToEvents { [weak self] event in
             self?.handleEvent(event)
         }
@@ -300,8 +338,6 @@ final class ChatViewModel {
             }
         }
 
-        // Scope SSE stream to this session's directory for live updates.
-        connectionManager.setActiveEventDirectory(session.directory)
     }
 
     /// Unsubscribe from SSE events.
@@ -389,23 +425,9 @@ final class ChatViewModel {
     // MARK: - Private
 
     private func handleEvent(_ event: SSEEvent) {
-        lastSSEEventAt = Date()
-        #if DEBUG
-        switch event {
-        case .messageUpdated(let m):
-            print("[ChatVM] SSE messageUpdated: \(m.id) role=\(m.role) session=\(m.sessionID)")
-        case .messagePartUpdated(let p):
-            print("[ChatVM] SSE partUpdated: \(p.part.type) msgID=\(p.part.messageID)")
-        case .sessionStatus(let s):
-            print("[ChatVM] SSE sessionStatus: \(s.sessionID) status=\(s.status)")
-        case .sessionIdle(let sid):
-            print("[ChatVM] SSE sessionIdle: \(sid)")
-        case .messagePartDelta(let d):
-            print("[ChatVM] SSE partDelta: partID=\(d.partID) field=\(d.field) deltaLen=\(d.delta.count)")
-        default:
-            break
+        if isEventForSession(event) {
+            lastSSEEventAt = Date()
         }
-        #endif
 
         switch event {
         case .messageUpdated(let message):
@@ -425,6 +447,16 @@ final class ChatViewModel {
             let part = payload.part
             guard part.sessionID == session.id else { return }
             upsertPart(part)
+            if let delta = payload.delta, !delta.isEmpty {
+                let deltaPayload = PartDeltaPayload(
+                    sessionID: part.sessionID,
+                    messageID: part.messageID,
+                    partID: part.id,
+                    field: "text",
+                    delta: delta
+                )
+                applyDelta(deltaPayload)
+            }
 
         case .messagePartRemoved(let payload):
             guard payload.sessionID == session.id else { return }
@@ -454,9 +486,6 @@ final class ChatViewModel {
 
         case .sessionStatus(let payload):
             guard payload.sessionID == session.id else { return }
-            #if DEBUG
-            print("[ChatVM] sessionStatus matched session \(session.id)")
-            #endif
             switch payload.status {
             case .idle:
                 isGenerating = false
@@ -468,9 +497,6 @@ final class ChatViewModel {
 
         case .sessionIdle(let sessionID):
             guard sessionID == session.id else { return }
-            #if DEBUG
-            print("[ChatVM] sessionIdle matched session \(session.id)")
-            #endif
             isGenerating = false
             pollTask?.cancel()
             pollTask = nil
@@ -479,25 +505,110 @@ final class ChatViewModel {
         case .messagePartDelta(let payload):
             guard payload.sessionID == session.id else { return }
             applyDelta(payload)
+        case .sessionUpdated(let updatedSession):
+            guard updatedSession.id == session.id else { return }
+            session = updatedSession
+
+        case .sessionDiff(let payload):
+            guard payload.sessionID == session.id else { return }
+            // Diff data arrived — if our session still lacks a summary, re-fetch.
+            if session.summary == nil || session.summary?.files == 0 {
+                Task { [weak self] in
+                    guard let self, let client = self.connectionManager.activeAPIClient else { return }
+                    if let updated = try? await SessionAPI(client: client).get(id: payload.sessionID) {
+                        self.session = updated
+                    }
+                }
+            }
+
         default:
             break
         }
     }
 
-    /// Start a fallback polling loop if SSE isn't delivering events.
+    private func isEventForSession(_ event: SSEEvent) -> Bool {
+        switch event {
+        case .messageUpdated(let message):
+            return message.sessionID == session.id
+        case .messageRemoved(let payload):
+            return payload.sessionID == session.id
+        case .messagePartUpdated(let payload):
+            return payload.part.sessionID == session.id
+        case .messagePartRemoved(let payload):
+            return payload.sessionID == session.id
+        case .messagePartDelta(let payload):
+            return payload.sessionID == session.id
+        case .permissionUpdated(let permission):
+            return permission.sessionID == session.id
+        case .permissionReplied(let payload):
+            return payload.sessionID == session.id
+        case .questionAsked(let request):
+            return request.sessionID == session.id
+        case .questionReplied(let payload):
+            return payload.sessionID == session.id
+        case .questionRejected(let payload):
+            return payload.sessionID == session.id
+        case .sessionStatus(let payload):
+            return payload.sessionID == session.id
+        case .sessionIdle(let sessionID):
+            return sessionID == session.id
+        case .sessionUpdated(let updatedSession):
+            return updatedSession.id == session.id
+        case .sessionDiff(let payload):
+            return payload.sessionID == session.id
+        default:
+            return false
+        }
+    }
+
+    /// Start a periodic watchdog that ensures `isGenerating` is eventually reset.
+    ///
+    /// Even when SSE events are flowing, the watchdog periodically polls the server
+    /// for session status. This guards against silently dropped `session.idle` events
+    /// that would otherwise leave `isGenerating` stuck at `true` forever.
     private func startFallbackPollingIfNeeded() {
         pollTask?.cancel()
         pollTask = Task { [weak self] in
             guard let self else { return }
-            // Give SSE a short window to deliver events.
-            try? await Task.sleep(for: .seconds(3))
+            // Give SSE a short window to deliver the first events.
+            try? await Task.sleep(for: .seconds(5))
             guard self.isGenerating else { return }
 
-            if let last = self.lastSSEEventAt, Date().timeIntervalSince(last) < 3 {
-                return
-            }
+            // Periodic watchdog: keep checking until isGenerating is false.
+            while self.isGenerating, !Task.isCancelled {
+                // Always poll for session status, even when SSE is active.
+                // This catches cases where session.idle events are missed/dropped.
+                await self.pollSessionStatus()
 
-            await self.pollForCompletion()
+                guard self.isGenerating, !Task.isCancelled else { break }
+
+                // If SSE is silent, also poll for messages (full sync).
+                let sseRecent = self.lastSSEEventAt.map { Date().timeIntervalSince($0) < 5 } ?? false
+                if !sseRecent {
+                    await self.pollForCompletion()
+                }
+
+                if self.isGenerating {
+                    try? await Task.sleep(for: .seconds(3))
+                }
+            }
+        }
+    }
+
+    /// Quick check of session status via REST. Sets `isGenerating = false` if idle.
+    private func pollSessionStatus() async {
+        guard let client = connectionManager.activeAPIClient else { return }
+        let sessionAPI = SessionAPI(client: client)
+        if let statusMap = try? await sessionAPI.status(),
+           let status = statusMap[session.id] {
+            switch status {
+            case .idle:
+                isGenerating = false
+                pollTask?.cancel()
+                pollTask = nil
+            case .busy, .retry:
+                break // still generating
+            }
         }
     }
 
@@ -648,6 +759,9 @@ final class ChatViewModel {
             // Flush any parts that arrived before this message
             let buffered = pendingParts.removeValue(forKey: message.id) ?? []
             messages.append(MessageWithParts(message: message, parts: buffered))
+            for part in buffered {
+                drainPendingDeltas(forPartID: part.id)
+            }
             loadedMessageIDs.insert(message.id)
         }
     }
@@ -717,15 +831,18 @@ final class ChatViewModel {
         } else {
             messages[msgIdx].parts.append(part)
         }
+        drainPendingDeltas(forPartID: part.id)
     }
 
     /// Apply a streaming text delta to an existing part.
     /// Reconstructs the Part with the appended text since Part fields are immutable.
     private func applyDelta(_ delta: PartDeltaPayload) {
         guard let msgIdx = messages.firstIndex(where: { $0.id == delta.messageID }) else {
+            bufferDelta(delta)
             return
         }
         guard let partIdx = messages[msgIdx].parts.firstIndex(where: { $0.id == delta.partID }) else {
+            bufferDelta(delta)
             return
         }
 
@@ -733,6 +850,7 @@ final class ChatViewModel {
 
         switch existingPart {
         case .text(let tp):
+            guard delta.field.isEmpty || delta.field == "text" || delta.field == "content" else { break }
             // Reconstruct TextPart with appended delta text
             let updatedText = tp.text + delta.delta
             let updated = TextPart(
@@ -749,6 +867,7 @@ final class ChatViewModel {
             messages[msgIdx].parts[partIdx] = .text(updated)
 
         case .reasoning(let rp):
+            guard delta.field.isEmpty || delta.field == "text" || delta.field == "reasoning" || delta.field == "content" else { break }
             // Reconstruct ReasoningPart with appended delta text
             let updatedText = rp.text + delta.delta
             let updated = ReasoningPart(
@@ -765,6 +884,17 @@ final class ChatViewModel {
         default:
             // Other part types don't have streaming text deltas
             break
+        }
+    }
+
+    private func bufferDelta(_ delta: PartDeltaPayload) {
+        pendingDeltas[delta.partID, default: []].append(delta)
+    }
+
+    private func drainPendingDeltas(forPartID partID: String) {
+        guard let buffered = pendingDeltas.removeValue(forKey: partID) else { return }
+        for delta in buffered {
+            applyDelta(delta)
         }
     }
 }

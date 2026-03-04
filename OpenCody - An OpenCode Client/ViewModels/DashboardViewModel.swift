@@ -184,6 +184,21 @@ final class DashboardViewModel {
         case .sessionIdle(let sessionID):
             statusMap[sessionID] = .idle
 
+        case .sessionDiff(let payload):
+            // session.diff arrives after session.updated, which should carry the summary.
+            // As a safety net, if the session in our list still has no summary, re-fetch it.
+            if let index = sessions.firstIndex(where: { $0.id == payload.sessionID }),
+               sessions[index].summary == nil || sessions[index].summary?.files == 0 {
+                Task { [weak self] in
+                    guard let self, let client = self.connectionManager.activeAPIClient else { return }
+                    if let updated = try? await SessionAPI(client: client).get(id: payload.sessionID) {
+                        if let idx = self.sessions.firstIndex(where: { $0.id == payload.sessionID }) {
+                            self.sessions[idx] = updated
+                        }
+                    }
+                }
+            }
+
         default:
             break
         }
@@ -222,10 +237,9 @@ final class DashboardViewModel {
     }
 
     private func normalizePath(_ path: String) -> String {
-        let standardized = URL(fileURLWithPath: path)
+        URL(fileURLWithPath: path)
             .standardizedFileURL
             .resolvingSymlinksInPath()
             .path
-        return standardized.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
     }
 }

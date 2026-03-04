@@ -8,10 +8,12 @@ import SwiftUI
 /// iPad sidebar with server switcher, live session list, and settings links.
 struct iPadSidebarView: View {
     let connectionManager: ConnectionManager
-    @Binding var selectedSessionID: String?
+    let viewModel: DashboardViewModel
+    @Binding var selectedProjectKey: String?
     @Binding var showCreateSheet: Bool
+    let openServers: () -> Void
+    let openSettings: () -> Void
 
-    @State private var viewModel: DashboardViewModel
     @EnvironmentObject private var serverStore: ServerStoreModel
     @State private var expandedProjects: Set<String> = []
 
@@ -19,19 +21,36 @@ struct iPadSidebarView: View {
 
     init(
         connectionManager: ConnectionManager,
-        selectedSessionID: Binding<String?>,
-        showCreateSheet: Binding<Bool>
+        viewModel: DashboardViewModel,
+        selectedProjectKey: Binding<String?>,
+        showCreateSheet: Binding<Bool>,
+        openServers: @escaping () -> Void,
+        openSettings: @escaping () -> Void
     ) {
         self.connectionManager = connectionManager
-        self._selectedSessionID = selectedSessionID
+        self.viewModel = viewModel
+        self._selectedProjectKey = selectedProjectKey
         self._showCreateSheet = showCreateSheet
-        self._viewModel = State(initialValue: DashboardViewModel(connectionManager: connectionManager))
+        self.openServers = openServers
+        self.openSettings = openSettings
     }
 
     // MARK: - Body
 
     var body: some View {
-        List(selection: $selectedSessionID) {
+        List(selection: $selectedProjectKey) {
+            if let errorMessage = viewModel.error {
+                Section {
+                    ErrorBanner(
+                        error: .network(errorMessage),
+                        onDismiss: { viewModel.error = nil }
+                    )
+                    .padding(.vertical, Theme.Spacing.xs)
+                }
+                .listRowBackground(Color.clear)
+                .listRowInsets(EdgeInsets())
+            }
+
             // MARK: Server Switcher
             Section {
                 serverSwitcherRow
@@ -40,9 +59,19 @@ struct iPadSidebarView: View {
             }
             .listRowBackground(glassRowBackground)
 
-            // MARK: Sessions
+            // MARK: Projects
             Section {
-                if connectionManager.activeAPIClient == nil {
+                if connectionManager.activeAPIClient == nil && !serverStore.servers.isEmpty {
+                    VStack(spacing: Theme.Spacing.sm) {
+                        ProgressView()
+                            .tint(Theme.Colors.cyberBlue)
+                        Text("Connecting…")
+                            .font(Theme.Fonts.caption)
+                            .foregroundStyle(Theme.Colors.silver)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, Theme.Spacing.lg)
+                } else if connectionManager.activeAPIClient == nil {
                     VStack(spacing: Theme.Spacing.sm) {
                         Image(systemName: "server.rack")
                             .font(.system(size: 28))
@@ -53,6 +82,11 @@ struct iPadSidebarView: View {
                         Text("Add a server to get started.")
                             .font(Theme.Fonts.caption)
                             .foregroundStyle(Theme.Colors.silver)
+                        Button("Manage Servers") {
+                            openServers()
+                        }
+                        .font(Theme.Fonts.captionBold)
+                        .foregroundStyle(Theme.Colors.cyberBlue)
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, Theme.Spacing.lg)
@@ -62,25 +96,8 @@ struct iPadSidebarView: View {
                         .foregroundStyle(Theme.Colors.silver)
                 } else {
                     ForEach(sessionsByProject, id: \.key) { project in
-                        DisclosureGroup(
-                            isExpanded: Binding(
-                                get: { expandedProjects.contains(project.key) },
-                                set: { isExpanded in
-                                    if isExpanded {
-                                        expandedProjects.insert(project.key)
-                                    } else {
-                                        expandedProjects.remove(project.key)
-                                    }
-                                }
-                            )
-                        ) {
-                            ForEach(project.sessions) { session in
-                                iPadSessionRow(session: session)
-                                    .tag(session.id)
-                            }
-                            .onDelete { offsets in
-                                deleteSessionsInGroup(project.sessions, at: offsets)
-                            }
+                        Button {
+                            selectedProjectKey = project.key
                         } label: {
                             HStack(spacing: Theme.Spacing.sm) {
                                 Image(systemName: "folder.fill")
@@ -90,13 +107,11 @@ struct iPadSidebarView: View {
                                     .font(Theme.Fonts.bodyBold)
                                     .foregroundStyle(Theme.Colors.cloud)
                                     .lineLimit(1)
-                                Spacer()
-                                Text("\(project.sessions.count)")
-                                    .font(Theme.Fonts.caption)
-                                    .foregroundStyle(Theme.Colors.silver)
                             }
                         }
-                        .tint(Theme.Colors.silver)
+                        .buttonStyle(.plain)
+                        .tag(project.key)
+                        .listRowBackground(glassRowBackground)
                     }
                 }
             } header: {
@@ -114,18 +129,12 @@ struct iPadSidebarView: View {
 
             // MARK: Settings
             Section {
-                NavigationLink(value: iPadSettingsDestination.servers) {
-                    settingsRow(icon: "server.rack", color: Theme.Colors.cyberBlue, title: "Servers")
+                Button {
+                    openSettings()
+                } label: {
+                    settingsRow(icon: "gearshape", color: Theme.Colors.cyberBlue, title: "Settings")
                 }
-                NavigationLink(value: iPadSettingsDestination.providers) {
-                    settingsRow(icon: "cpu", color: Theme.Colors.neonGreen, title: "Providers")
-                }
-                NavigationLink(value: iPadSettingsDestination.mcp) {
-                    settingsRow(icon: "puzzlepiece.extension", color: Theme.Colors.electricPurple, title: "MCP Servers")
-                }
-                NavigationLink(value: iPadSettingsDestination.serverConfig) {
-                    settingsRow(icon: "gearshape.2", color: Theme.Colors.neonOrange, title: "Server Config")
-                }
+                .buttonStyle(.plain)
             } header: {
                 sectionHeader("Settings")
             }
@@ -136,34 +145,26 @@ struct iPadSidebarView: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 if connectionManager.activeAPIClient != nil {
-                    Button {
-                        showCreateSheet = true
-                    } label: {
-                        Image(systemName: "plus")
-                            .foregroundStyle(Theme.Colors.cyberBlue)
+                    HStack(spacing: Theme.Spacing.sm) {
+                        RefreshButton {
+                            await viewModel.loadSessions()
+                            await viewModel.loadStatuses()
+                        }
+
+                        Button {
+                            showCreateSheet = true
+                        } label: {
+                            Image(systemName: "plus")
+                                .foregroundStyle(Theme.Colors.cyberBlue)
+                        }
                     }
                 }
             }
         }
-        .refreshable {
-            await viewModel.loadSessions()
-            await viewModel.loadStatuses()
-        }
-        .task {
-            await viewModel.loadSessions()
-            await viewModel.loadStatuses()
-            viewModel.startObservingEvents()
-            // Expand all projects by default
-            expandedProjects = Set(sessionsByProject.map(\.key))
-        }
-        .onChange(of: viewModel.sessions) {
+        .task { }
+        .onChange(of: viewModel.sessions) { _, _ in
             // Auto-expand any new projects
-            let allKeys = Set(sessionsByProject.map(\.key))
-            let newKeys = allKeys.subtracting(expandedProjects)
-            expandedProjects.formUnion(newKeys)
-        }
-        .onDisappear {
-            viewModel.stopObservingEvents()
+            // Keep collapsed by default
         }
     }
 
@@ -178,7 +179,7 @@ struct iPadSidebarView: View {
             } else {
                 ForEach(serverStore.servers) { server in
                     Button {
-                        connectionManager.setActiveServer(server.id)
+                        connectionManager.connectAndActivate(server: server)
                     } label: {
                         let isActive = server.id == connectionManager.activeServerID
                         Label {
@@ -226,52 +227,7 @@ struct iPadSidebarView: View {
         .buttonStyle(.plain)
     }
 
-    // MARK: - Session Row
-
-    private func iPadSessionRow(session: Session) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text(session.title.isEmpty ? "Untitled Session" : session.title)
-                    .font(Theme.Fonts.body)
-                    .foregroundStyle(Theme.Colors.cloud)
-                    .lineLimit(1)
-
-                Spacer()
-
-                if isSessionRunning(status: viewModel.statusMap[session.id]) {
-                    ProgressView()
-                        .controlSize(.mini)
-                        .tint(Theme.Colors.cyberBlue)
-                }
-
-                statusDot(for: viewModel.statusMap[session.id])
-            }
-
-            Text(session.directory)
-                .font(Theme.Fonts.codeCaption)
-                .foregroundStyle(Theme.Colors.silver)
-                .lineLimit(1)
-                .truncationMode(.middle)
-
-            HStack(spacing: Theme.Spacing.xs) {
-                if let summary = session.summary {
-                    Text("+\(summary.additions)")
-                        .font(Theme.Fonts.codeCaption)
-                        .foregroundStyle(Theme.Colors.neonGreen.opacity(0.8))
-                    Text("-\(summary.deletions)")
-                        .font(Theme.Fonts.codeCaption)
-                        .foregroundStyle(Theme.Colors.hotPink.opacity(0.8))
-                }
-
-                Spacer()
-
-                Text(relativeTime(for: session))
-                    .font(Theme.Fonts.caption)
-                    .foregroundStyle(Theme.Colors.smoke)
-            }
-        }
-        .padding(.vertical, 4)
-    }
+    // MARK: - Session Row (removed for iPad project list)
 
     // MARK: - Settings Row
 
@@ -335,37 +291,7 @@ struct iPadSidebarView: View {
         connectionStatusFrom(connectionManager.connectionState(for: server.id)).color
     }
 
-    private func statusDot(for status: SessionStatus?) -> some View {
-        let connStatus: ConnectionStatus = {
-            guard let status else { return .idle }
-            switch status {
-            case .idle: return .idle
-            case .busy: return .active
-            case .retry: return .connecting
-            }
-        }()
-        return Circle()
-            .fill(connStatus.color)
-            .frame(width: 7, height: 7)
-            .shadow(color: connStatus.color.opacity(0.5), radius: 2)
-    }
-
-    private func isSessionRunning(status: SessionStatus?) -> Bool {
-        guard let status else { return false }
-        switch status {
-        case .idle:
-            return false
-        case .busy, .retry:
-            return true
-        }
-    }
-
-    private func relativeTime(for session: Session) -> String {
-        let date = Date(timeIntervalSince1970: session.time.updated)
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .abbreviated
-        return formatter.localizedString(for: date, relativeTo: Date())
-    }
+    // MARK: - Session helpers removed
 
     private func connectionStatusFrom(_ state: ConnectionState) -> ConnectionStatus {
         switch state {
@@ -376,23 +302,7 @@ struct iPadSidebarView: View {
         }
     }
 
-    private func deleteSessions(at offsets: IndexSet) {
-        for index in offsets {
-            let session = viewModel.sessions[index]
-            Task {
-                try? await viewModel.deleteSession(id: session.id)
-            }
-        }
-    }
-
-    private func deleteSessionsInGroup(_ sessions: [Session], at offsets: IndexSet) {
-        for index in offsets {
-            let session = sessions[index]
-            Task {
-                try? await viewModel.deleteSession(id: session.id)
-            }
-        }
-    }
+    // MARK: - Delete helpers removed
 
     private var sessionsByProject: [(key: String, sessions: [Session])] {
         let grouped = Dictionary(grouping: viewModel.sessions) { session -> String in
@@ -405,12 +315,4 @@ struct iPadSidebarView: View {
             .sorted { $0.key.lowercased() < $1.key.lowercased() }
             .map { (key: $0.key, sessions: $0.value.sorted { $0.time.updated > $1.time.updated }) }
     }
-}
-
-/// Navigation destinations for settings items in the iPad sidebar.
-enum iPadSettingsDestination: Hashable {
-    case servers
-    case providers
-    case mcp
-    case serverConfig
 }

@@ -111,6 +111,43 @@ struct SettingsView: View {
 
                         SettingsDivider()
 
+                        NavigationLink {
+                            LicensesView()
+                        } label: {
+                            SettingsRow(
+                                icon: "doc.text",
+                                iconColor: Theme.Colors.cyberBlue,
+                                title: "Licenses & Open Source",
+                                detail: nil
+                            )
+                        }
+
+                        SettingsDivider()
+
+                        Link(destination: URL(string: "https://willsoftwaresolutions.de/impressum")!) {
+                            SettingsRow(
+                                icon: "building.2",
+                                iconColor: Theme.Colors.neonOrange,
+                                title: "Will Software Solutions",
+                                detail: "Impressum"
+                            )
+                        }
+
+                        SettingsDivider()
+
+                        NavigationLink {
+                            PrivacyPolicyView()
+                        } label: {
+                            SettingsRow(
+                                icon: "hand.raised",
+                                iconColor: Theme.Colors.electricPurple,
+                                title: "Privacy",
+                                detail: nil
+                            )
+                        }
+
+                        SettingsDivider()
+
                         Link(destination: URL(string: "https://github.com/sst/opencode")!) {
                             SettingsRow(
                                 icon: "link",
@@ -120,6 +157,14 @@ struct SettingsView: View {
                             )
                         }
                     }
+
+                    // MARK: - Copyright
+                    Text("© 2026 Will Software Solutions. All rights reserved.")
+                        .font(Theme.Fonts.caption)
+                        .foregroundStyle(Theme.Colors.smoke)
+                        .frame(maxWidth: .infinity)
+                        .multilineTextAlignment(.center)
+                        .padding(.top, Theme.Spacing.sm)
                 }
                 .padding(.top, Theme.Spacing.sm)
                 .padding(.bottom, Theme.Spacing.xxl)

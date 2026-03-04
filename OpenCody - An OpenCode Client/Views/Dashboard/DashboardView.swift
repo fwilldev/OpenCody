@@ -83,18 +83,21 @@ struct DashboardView: View {
 
             ToolbarItem(placement: .primaryAction) {
                 if connectionManager.activeAPIClient != nil {
-                    Button {
-                        showCreateSheet = true
-                    } label: {
-                        Image(systemName: "plus")
-                            .foregroundStyle(Theme.Colors.cyberBlue)
+                    HStack(spacing: Theme.Spacing.sm) {
+                        RefreshButton {
+                            await viewModel.loadSessions()
+                            await viewModel.loadStatuses()
+                        }
+
+                        Button {
+                            showCreateSheet = true
+                        } label: {
+                            Image(systemName: "plus")
+                                .foregroundStyle(Theme.Colors.cyberBlue)
+                        }
                     }
                 }
-                }
             }
-        .refreshable {
-            await viewModel.loadSessions()
-            await viewModel.loadStatuses()
         }
         .sheet(isPresented: $showCreateSheet) {
             CreateSessionSheet(
@@ -165,14 +168,12 @@ struct DashboardView: View {
                     NavigationLink(destination: ProjectSessionsView(
                         projectName: group.key,
                         projectPath: group.sessions.first?.directory,
-                        sessions: group.sessions,
-                        statusMap: viewModel.statusMap,
+                        initialStatusMap: viewModel.statusMap,
                         viewModel: viewModel,
                         connectionManager: connectionManager
                     )) {
                         ProjectCardView(
                             projectName: group.key,
-                            sessionCount: group.sessions.count,
                             activeSessions: group.sessions.filter { isBusy(viewModel.statusMap[$0.id]) }.count,
                             lastUpdated: group.sessions.first?.time.updated ?? 0
                         )

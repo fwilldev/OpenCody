@@ -10,6 +10,7 @@ import Foundation
 /// - `GET    /session/{id}`           → get one session
 /// - `DELETE /session/{id}`           → delete a session
 /// - `POST   /session/{id}/abort`     → abort a running session
+/// - `POST   /session/{id}/shell`      → execute a shell command
 /// - `POST   /session/{id}/summarize` → summarize a session
 /// - `POST   /session/{id}/share`     → share a session
 /// - `DELETE /session/{id}/share`     → unshare a session
@@ -56,13 +57,48 @@ struct SessionAPI: Sendable {
         let response: String
     }
 
+    private struct ShellBody: Encodable {
+        let command: String
+        let agent: String
+        let model: ShellModelSelection?
+
+        struct ShellModelSelection: Encodable {
+            let providerID: String
+            let modelID: String
+        }
+    }
+
     // MARK: - Endpoints
 
-    /// List all sessions (optionally filtered by directory).
-    func list(directory: String? = nil) async throws -> [Session] {
-        let queryItems = directory.map { [URLQueryItem(name: "directory", value: $0)] }
-        let data = try await client.requestData(.get("/session", queryItems: queryItems))
-        return try JSONDecoder().decode([Session].self, from: data)
+    /// List sessions (optionally filtered by directory).
+    /// - Parameters:
+    ///   - directory: Only return sessions for this project directory.
+    ///   - roots: When `true`, return root sessions with aggregated summary data (default `true`).
+    ///   - limit: Maximum number of sessions to return (default 100).
+    func list(directory: String? = nil, roots: Bool = true, limit: Int = 100) async throws -> [Session] {
+        var items: [URLQueryItem] = []
+        if let directory { items.append(URLQueryItem(name: "directory", value: directory)) }
+        if roots { items.append(URLQueryItem(name: "roots", value: "true")) }
+        items.append(URLQueryItem(name: "limit", value: String(limit)))
+        let data = try await client.requestData(.get("/session", queryItems: items.isEmpty ? nil : items))
+        #if DEBUG
+        let preview = String(data: data, encoding: .utf8)?.prefix(3000) ?? "<nil>"
+        print("[SessionAPI.list] responseLength=\(data.count) preview=\(preview)")
+        #endif
+        do {
+            let result = try JSONDecoder().decode([Session].self, from: data)
+            #if DEBUG
+            for s in result {
+                print("[SessionAPI.list] session=\(s.id) title=\(s.title.prefix(40)) summary=\(s.summary.map { "files=\($0.files) +\($0.additions) -\($0.deletions)" } ?? "nil")")
+            }
+            #endif
+            return result
+        } catch {
+            #if DEBUG
+            print("[SessionAPI.list] DECODE ERROR: \(error)")
+            #endif
+            throw error
+        }
     }
 
     /// Create a new session for a specific directory.
@@ -153,9 +189,29 @@ struct SessionAPI: Sendable {
     }
 
     /// Get diffs for a session (returns all stored diffs for the session).
-    func diff(id: String) async throws -> [FileDiff] {
-        let data = try await client.requestData(.get("/session/\(id)/diff"))
-        return try JSONDecoder().decode([FileDiff].self, from: data)
+    /// - Parameters:
+    ///   - id: The session ID.
+    ///   - messageID: Optional message ID to scope the diffs to a specific message.
+    func diff(id: String, messageID: String? = nil) async throws -> [FileDiff] {
+        var queryItems: [URLQueryItem] = []
+        if let messageID { queryItems.append(URLQueryItem(name: "messageID", value: messageID)) }
+        let data = try await client.requestData(.get("/session/\(id)/diff", queryItems: queryItems.isEmpty ? nil : queryItems))
+        #if DEBUG
+        let preview = String(data: data, encoding: .utf8)?.prefix(2000) ?? "<nil>"
+        print("[SessionAPI.diff] id=\(id) responseLength=\(data.count) preview=\(preview)")
+        #endif
+        do {
+            let result = try JSONDecoder().decode([FileDiff].self, from: data)
+            #if DEBUG
+            print("[SessionAPI.diff] decoded \(result.count) diffs")
+            #endif
+            return result
+        } catch {
+            #if DEBUG
+            print("[SessionAPI.diff] DECODE ERROR: \(error)")
+            #endif
+            throw error
+        }
     }
 
     /// Get the status of all sessions (keyed by session ID).
@@ -178,5 +234,14 @@ struct SessionAPI: Sendable {
     func todos(id: String) async throws -> [TodoItem] {
         let data = try await client.requestData(.get("/session/\(id)/todo"))
         return try JSONDecoder().decode([TodoItem].self, from: data)
+    }
+
+    /// Execute a shell command in the session.
+    func shell(id: String, command: String, agent: String, providerID: String? = nil, modelID: String? = nil) async throws {
+        var model: ShellBody.ShellModelSelection? = nil
+        if let providerID, let modelID {
+            model = ShellBody.ShellModelSelection(providerID: providerID, modelID: modelID)
+        }
+        try await client.requestVoid(.post("/session/\(id)/shell", body: ShellBody(command: command, agent: agent, model: model)))
     }
 }

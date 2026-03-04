@@ -5,18 +5,18 @@ import Foundation
 /// Typed wrapper for all command/tool-related REST endpoints.
 ///
 /// Endpoints:
-/// - `GET  /command`          → list slash commands
-/// - `POST /command/execute`  → execute a slash command
-/// - `GET  /tool`             → list available tools
+/// - `GET  /command`                        → list slash commands
+/// - `POST /session/:sessionID/command`     → execute a slash command
+/// - `GET  /tool`                           → list available tools
 struct CommandAPI: Sendable {
     let client: APIClient
 
     // MARK: - Request Bodies
 
     private struct ExecuteBody: Encodable {
-        let sessionID: String
         let name: String
-        let arguments: String
+        let arguments: String?
+        let messageID: String?
     }
 
     // MARK: - Endpoints
@@ -28,9 +28,14 @@ struct CommandAPI: Sendable {
     }
 
     /// Execute a slash command in a session.
-    func execute(sessionID: String, name: String, arguments: String = "") async throws {
+    /// - Parameters:
+    ///   - sessionID: The session to execute the command in.
+    ///   - name: The command name (without leading "/").
+    ///   - arguments: Optional arguments string.
+    ///   - messageID: Optional message ID context.
+    func execute(sessionID: String, name: String, arguments: String? = nil, messageID: String? = nil) async throws {
         try await client.requestVoid(
-            .post("/command/execute", body: ExecuteBody(sessionID: sessionID, name: name, arguments: arguments))
+            .post("/session/\(sessionID)/command", body: ExecuteBody(name: name, arguments: arguments, messageID: messageID))
         )
     }
 

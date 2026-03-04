@@ -12,6 +12,7 @@ struct Agent: Codable, Identifiable, Sendable {
     let model: AgentModel?
     let prompt: String?
     let options: [String: AnyCodable]
+    let hidden: Bool?
 
     /// Use `name` as the identifier
     var id: String { name }

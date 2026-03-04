@@ -11,6 +11,7 @@ struct TodoListView: View {
     let session: Session
     let apiClient: APIClient
     let viewModel: ChatViewModel
+    let showsCloseButton: Bool
 
     @Environment(\.dismiss) private var dismiss
     @State private var todos: [TodoItem] = []
@@ -50,9 +51,11 @@ struct TodoListView: View {
             .navigationTitle("Todos")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Close") { dismiss() }
-                        .foregroundStyle(Theme.Colors.silver)
+                if showsCloseButton {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Close") { dismiss() }
+                            .foregroundStyle(Theme.Colors.silver)
+                    }
                 }
                 ToolbarItem(placement: .primaryAction) {
                     let pending = todos.filter { $0.status == .pending || $0.status == .inProgress }.count
@@ -68,6 +71,13 @@ struct TodoListView: View {
         .task {
             await loadTodos()
         }
+    }
+
+    init(session: Session, apiClient: APIClient, viewModel: ChatViewModel, showsCloseButton: Bool = true) {
+        self.session = session
+        self.apiClient = apiClient
+        self.viewModel = viewModel
+        self.showsCloseButton = showsCloseButton
     }
 
     private var todoList: some View {

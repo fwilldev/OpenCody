@@ -106,7 +106,7 @@ struct AgentModelPicker: View {
                     }
                     .listRowBackground(Theme.Colors.graphite)
 
-                    ForEach(agents, id: \.name) { agent in
+                    ForEach(agents.filter { !($0.hidden ?? false) }, id: \.name) { agent in
                         Button {
                             viewModel.selectedAgentID = agent.name
                         } label: {

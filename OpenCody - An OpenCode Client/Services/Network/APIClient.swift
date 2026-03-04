@@ -11,6 +11,7 @@ import Foundation
 nonisolated final class APIClient: Sendable {
     let baseURL: String
     private let authHeader: String?
+    var authorizationHeader: String? { authHeader }
     private let session: URLSession
 
     init(baseURL: String, username: String, password: String) {
@@ -127,6 +128,7 @@ nonisolated final class APIClient: Sendable {
         if let auth = authHeader {
             request.setValue(auth, forHTTPHeaderField: "Authorization")
         }
+
 
         // Content-Type
         switch endpoint.contentType {

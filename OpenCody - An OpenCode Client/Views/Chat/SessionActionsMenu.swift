@@ -20,6 +20,7 @@ struct SessionActionsMenu: View {
     @State private var successMessage: String? = nil
     @State private var showForkAlert = false
     @State private var forkedSessionID: String? = nil
+    @State private var showFileExplorer = false
 
     var body: some View {
         Menu {
@@ -49,18 +50,25 @@ struct SessionActionsMenu: View {
 
             Divider()
 
-            // Diff
-            Button {
-                showDiff = true
-            } label: {
-                Label("View Diff", systemImage: "list.bullet.rectangle")
-            }
+            // Diff / Todos / File Explorer are shown in the iPad utilities panel
+            if UIDevice.current.userInterfaceIdiom != .pad {
+                Button {
+                    showDiff = true
+                } label: {
+                    Label("View Diff", systemImage: "list.bullet.rectangle")
+                }
 
-            // Todos
-            Button {
-                showTodos = true
-            } label: {
-                Label("Todos", systemImage: "checkmark.circle")
+                Button {
+                    showTodos = true
+                } label: {
+                    Label("Todos", systemImage: "checkmark.circle")
+                }
+
+                Button {
+                    showFileExplorer = true
+                } label: {
+                    Label("File Explorer", systemImage: "folder")
+                }
             }
 
             Divider()
@@ -108,6 +116,9 @@ struct SessionActionsMenu: View {
         }
         .sheet(isPresented: $showTodos) {
             TodoListView(session: session, apiClient: apiClient, viewModel: viewModel)
+        }
+        .sheet(isPresented: $showFileExplorer) {
+            FileExplorerView(session: session, apiClient: apiClient)
         }
         .sheet(isPresented: $showSummary) {
             SessionSummaryView(sessionTitle: session.title)

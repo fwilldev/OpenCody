@@ -2,82 +2,64 @@ import Foundation
 
 // MARK: - FileAPI
 
-/// Typed wrapper for all file/project-related REST endpoints.
+/// Typed wrapper for file/project-related REST endpoints.
 ///
-/// Endpoints:
-/// - `GET /file/read`              → read file content
-/// - `GET /file/find`              → find files (dirs=false) or directories (dirs=true)
-/// - `GET /file/search`            → search file contents (grep)
-/// - `GET /file/changed`           → list changed files
-/// - `GET /file/symbols`           → search for symbols
-/// - `GET /file/vcs`               → get VCS info
-/// - `GET /file/path`              → get path info
-/// - `GET /project`                → list all projects
+/// Endpoints (per opencode server API):
+/// - `GET /file`              → list directory contents
+/// - `GET /file/content`      → read file content
+/// - `GET /file/status`       → git status of files
+/// - `GET /project`           → list all projects
 struct FileAPI: Sendable {
     let client: APIClient
 
     // MARK: - Endpoints
 
     /// List files and directories at a path.
+    ///
+    /// - Parameter path: Relative path within the project (e.g. `"src"`, `"src/views"`).
+    /// - Returns: Array of `FileNode` entries (files and directories).
     func list(path: String, directory: String? = nil) async throws -> [FileNode] {
         var items = [URLQueryItem(name: "path", value: path)]
         if let directory {
             items.append(URLQueryItem(name: "directory", value: directory))
         }
-        let data = try await client.requestData(.get("/file", queryItems: items))
+        let data = try await client.requestData(
+            .get("/file", queryItems: items)
+        )
         return try JSONDecoder().decode([FileNode].self, from: data)
     }
 
     /// Read the content of a file.
-    func read(path: String) async throws -> FileContent {
+    ///
+    /// - Parameter path: Relative path to the file (e.g. `"src/index.ts"`).
+    /// - Returns: `FileContent` with text/binary content.
+    func content(path: String, directory: String? = nil) async throws -> FileContent {
+        var items = [URLQueryItem(name: "path", value: path)]
+        if let directory {
+            items.append(URLQueryItem(name: "directory", value: directory))
+        }
         let data = try await client.requestData(
-            .get("/file/read", queryItems: [URLQueryItem(name: "path", value: path)])
+            .get(
+                "/file/content",
+                queryItems: items
+            )
         )
         return try JSONDecoder().decode(FileContent.self, from: data)
     }
 
-    /// Find files matching a pattern.
-    func findFiles(pattern: String? = nil) async throws -> [FileNode] {
-        var items = [URLQueryItem(name: "dirs", value: "false")]
-        if let pattern { items.append(URLQueryItem(name: "pattern", value: pattern)) }
-        let data = try await client.requestData(.get("/file/find", queryItems: items))
-        return try JSONDecoder().decode([FileNode].self, from: data)
-    }
-
-    /// Find directories matching a pattern.
-    func findDirectories(pattern: String? = nil) async throws -> [FileNode] {
-        var items = [URLQueryItem(name: "dirs", value: "true")]
-        if let pattern { items.append(URLQueryItem(name: "pattern", value: pattern)) }
-        let data = try await client.requestData(.get("/file/find", queryItems: items))
-        return try JSONDecoder().decode([FileNode].self, from: data)
-    }
-
-    /// Search file contents (grep-like).
-    func search(query: String) async throws -> [FileNode] {
-        let data = try await client.requestData(
-            .get("/file/search", queryItems: [URLQueryItem(name: "query", value: query)])
-        )
-        return try JSONDecoder().decode([FileNode].self, from: data)
-    }
-
-    /// List changed files (uncommitted changes).
-    func changed() async throws -> [ChangedFile] {
-        let data = try await client.requestData(.get("/file/changed"))
+    /// Get git status of all changed files.
+    ///
+    /// - Returns: Array of `ChangedFile` entries with add/remove counts and status.
+    func status(directory: String? = nil) async throws -> [ChangedFile] {
+        let items = directory.map { [URLQueryItem(name: "directory", value: $0)] }
+        let data = try await client.requestData(.get("/file/status", queryItems: items))
         return try JSONDecoder().decode([ChangedFile].self, from: data)
     }
 
-    /// Search for code symbols.
-    func symbols(query: String) async throws -> [SymbolInfo] {
-        let data = try await client.requestData(
-            .get("/file/symbols", queryItems: [URLQueryItem(name: "query", value: query)])
-        )
-        return try JSONDecoder().decode([SymbolInfo].self, from: data)
-    }
-
-    /// Get VCS (version control) information.
-    func vcs() async throws -> VcsInfo {
-        let data = try await client.requestData(.get("/file/vcs"))
-        return try JSONDecoder().decode(VcsInfo.self, from: data)
+    /// List all known projects.
+    func listProjects() async throws -> [Project] {
+        let data = try await client.requestData(.get("/project"))
+        return try JSONDecoder().decode([Project].self, from: data)
     }
 
     /// Get path information for the current working directory.
@@ -86,9 +68,23 @@ struct FileAPI: Sendable {
         return try JSONDecoder().decode(PathInfo.self, from: data)
     }
 
-    /// List all known projects.
-    func listProjects() async throws -> [Project] {
-        let data = try await client.requestData(.get("/project"))
-        return try JSONDecoder().decode([Project].self, from: data)
+    /// Search for files by name or pattern.
+    ///
+    /// - Parameters:
+    ///   - query: Search query (file name or glob pattern).
+    ///   - directory: Optional project directory scope.
+    ///   - limit: Maximum number of results (1–200).
+    /// - Returns: Array of relative file path strings.
+    func findFiles(query: String, directory: String? = nil, limit: Int = 20) async throws -> [String] {
+        var items = [URLQueryItem(name: "query", value: query)]
+        if let directory {
+            items.append(URLQueryItem(name: "directory", value: directory))
+        }
+        items.append(URLQueryItem(name: "limit", value: String(limit)))
+        let data = try await client.requestData(
+            .get("/find/file", queryItems: items)
+        )
+        return try JSONDecoder().decode([String].self, from: data)
     }
+
 }

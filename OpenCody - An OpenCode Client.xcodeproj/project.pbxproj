@@ -8,6 +8,9 @@
 
 /* Begin PBXBuildFile section */
 		B05C611F2F51BF550058D14E /* MarkdownUI in Frameworks */ = {isa = PBXBuildFile; productRef = B05C611E2F51BF550058D14E /* MarkdownUI */; };
+		B05C61FA2F55D7840058D14E /* LDSwiftEventSource in Frameworks */ = {isa = PBXBuildFile; productRef = B05C61F92F55D7840058D14E /* LDSwiftEventSource */; };
+		B05C62062F56F8580058D14E /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = B05C62052F56F8580058D14E /* AppIcon.icon */; };
+		B05C62102F5741BF0058D14E /* HighlightSwift in Frameworks */ = {isa = PBXBuildFile; productRef = B05C62102F5740F00058D14E /* HighlightSwift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -28,6 +31,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		B05C62052F56F8580058D14E /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = AppIcon.icon; sourceTree = "<group>"; };
 		B0CD5F092F4DFB2700E79BBB /* OpenCody - An OpenCode Client.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "OpenCody - An OpenCode Client.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		B0CD5F182F4DFB2900E79BBB /* OpenCody - An OpenCode ClientTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "OpenCody - An OpenCode ClientTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		B0CD5F222F4DFB2900E79BBB /* OpenCody - An OpenCode ClientUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "OpenCody - An OpenCode ClientUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -56,6 +60,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B05C62102F5741BF0058D14E /* HighlightSwift in Frameworks */,
+				B05C61FA2F55D7840058D14E /* LDSwiftEventSource in Frameworks */,
 				B05C611F2F51BF550058D14E /* MarkdownUI in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -80,6 +86,7 @@
 		B0CD5F002F4DFB2700E79BBB = {
 			isa = PBXGroup;
 			children = (
+				B05C62052F56F8580058D14E /* AppIcon.icon */,
 				B0CD5F0B2F4DFB2700E79BBB /* OpenCody - An OpenCode Client */,
 				B0CD5F1B2F4DFB2900E79BBB /* OpenCody - An OpenCode ClientTests */,
 				B0CD5F252F4DFB2900E79BBB /* OpenCody - An OpenCode ClientUITests */,
@@ -118,6 +125,8 @@
 			name = "OpenCody - An OpenCode Client";
 			packageProductDependencies = (
 				B05C611E2F51BF550058D14E /* MarkdownUI */,
+				B05C61F92F55D7840058D14E /* LDSwiftEventSource */,
+				B05C62102F5740F00058D14E /* HighlightSwift */,
 			);
 			productName = "OpenCody - An OpenCode Client";
 			productReference = B0CD5F092F4DFB2700E79BBB /* OpenCody - An OpenCode Client.app */;
@@ -203,6 +212,8 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				B05C611D2F51BF550058D14E /* XCRemoteSwiftPackageReference "swift-markdown-ui" */,
+				B05C61F82F55D7840058D14E /* XCRemoteSwiftPackageReference "swift-eventsource" */,
+				B05C620F2F5740F00058D14E /* XCRemoteSwiftPackageReference "HighlightSwift" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = B0CD5F0A2F4DFB2700E79BBB /* Products */;
@@ -221,6 +232,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B05C62062F56F8580058D14E /* AppIcon.icon in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -404,11 +416,13 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = Q738AAV584;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "OpenCody - An OpenCode Client";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -419,7 +433,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "wss.OpenCody---An-OpenCode-Client";
+				PRODUCT_BUNDLE_IDENTIFIER = wss.OpenCody;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -436,11 +450,13 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = Q738AAV584;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "OpenCody - An OpenCode Client";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -451,7 +467,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "wss.OpenCody---An-OpenCode-Client";
+				PRODUCT_BUNDLE_IDENTIFIER = wss.OpenCody;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -597,6 +613,22 @@
 				minimumVersion = 2.4.1;
 			};
 		};
+		B05C61F82F55D7840058D14E /* XCRemoteSwiftPackageReference "swift-eventsource" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/launchdarkly/swift-eventsource";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 3.3.0;
+			};
+		};
+		B05C620F2F5740F00058D14E /* XCRemoteSwiftPackageReference "HighlightSwift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/appstefan/HighlightSwift";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.0.9;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -604,6 +636,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = B05C611D2F51BF550058D14E /* XCRemoteSwiftPackageReference "swift-markdown-ui" */;
 			productName = MarkdownUI;
+		};
+		B05C61F92F55D7840058D14E /* LDSwiftEventSource */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = B05C61F82F55D7840058D14E /* XCRemoteSwiftPackageReference "swift-eventsource" */;
+			productName = LDSwiftEventSource;
+		};
+		B05C62102F5740F00058D14E /* HighlightSwift */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = B05C620F2F5740F00058D14E /* XCRemoteSwiftPackageReference "HighlightSwift" */;
+			productName = HighlightSwift;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

@@ -55,6 +55,36 @@ struct FileDiff: Codable, Sendable {
     let after: String
     let additions: Int
     let deletions: Int
+    let status: FileDiffStatus
+
+    enum CodingKeys: String, CodingKey {
+        case file, before, after, additions, deletions, status
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        file = try container.decode(String.self, forKey: .file)
+        // before/after can be null for added/deleted files
+        before = try container.decodeIfPresent(String.self, forKey: .before) ?? ""
+        after = try container.decodeIfPresent(String.self, forKey: .after) ?? ""
+        additions = try container.decodeIfPresent(Int.self, forKey: .additions) ?? 0
+        deletions = try container.decodeIfPresent(Int.self, forKey: .deletions) ?? 0
+        status = try container.decodeIfPresent(FileDiffStatus.self, forKey: .status) ?? .modified
+    }
+}
+
+enum FileDiffStatus: String, Codable, Sendable {
+    case modified
+    case added
+    case deleted
+
+    var label: String {
+        switch self {
+        case .modified: return "M"
+        case .added: return "A"
+        case .deleted: return "D"
+        }
+    }
 }
 
 // MARK: - SessionShare

@@ -51,11 +51,8 @@ final class EventService {
 
     // MARK: - Private State
 
-    /// Task that runs the SSE connection + event consumption loop.
-    private var connectionTask: Task<Void, Never>?
-
-    /// Detached task running the nonisolated SSEClient.
-    private var sseTask: Task<Void, Never>?
+    /// The active SSE client.
+    private var sseClient: SSEClient?
 
     // MARK: - Lifecycle
 
@@ -69,45 +66,26 @@ final class EventService {
         stopListening()
         connectionState = .connecting
 
-        let (stream, continuation) = AsyncStream<SSEEvent>.makeStream()
-
         let client = SSEClient(
-            apiClient: apiClient,
-            continuation: continuation,
-            onStateChange: { @Sendable [weak self] state in
-                Task { @MainActor [weak self] in
-                    self?.handleSSEStateChange(state)
-                }
+            baseURL: apiClient.baseURL,
+            authHeader: apiClient.authorizationHeader,
+            directoryFilter: directoryFilter,
+            onEvent: { @MainActor [weak self] event in
+                self?.onEvent?(event)
             },
-            directoryFilter: directoryFilter
+            onStateChange: { @MainActor [weak self] state in
+                self?.handleSSEStateChange(state)
+            }
         )
 
-        // Run SSEClient.connect() off-MainActor in a detached task
-        sseTask = Task.detached {
-            await client.connect()
-        }
-
-        // Consume events on MainActor
-        connectionTask = Task { [weak self] in
-            for await event in stream {
-                guard let self, !Task.isCancelled else { break }
-                self.onEvent?(event)
-            }
-
-            // Stream ended
-            guard let self, !Task.isCancelled else { return }
-            if case .connected = self.connectionState {
-                self.connectionState = .disconnected(error: nil)
-            }
-        }
+        sseClient = client
+        client.start()
     }
 
-    /// Stop listening and tear down all tasks.
+    /// Stop listening and tear down the SSE client.
     func stopListening() {
-        sseTask?.cancel()
-        connectionTask?.cancel()
-        sseTask = nil
-        connectionTask = nil
+        sseClient?.stop()
+        sseClient = nil
 
         if connectionState != .idle {
             connectionState = .idle

@@ -8,14 +8,32 @@ import SwiftUI
 struct ChatView: View {
     let session: Session
     let connectionManager: ConnectionManager
+    let utilitiesState: iPadUtilitiesState?
     @State private var viewModel: ChatViewModel
     @State private var isAtBottom = true
     @FocusState private var isInputFocused: Bool
 
-    init(session: Session, connectionManager: ConnectionManager) {
+    init(
+        session: Session,
+        connectionManager: ConnectionManager,
+        utilitiesState: iPadUtilitiesState? = nil
+    ) {
         self.session = session
         self.connectionManager = connectionManager
+        self.utilitiesState = utilitiesState
         self._viewModel = State(initialValue: ChatViewModel(session: session, connectionManager: connectionManager))
+    }
+
+    init(
+        session: Session,
+        connectionManager: ConnectionManager,
+        viewModel: ChatViewModel,
+        utilitiesState: iPadUtilitiesState? = nil
+    ) {
+        self.session = session
+        self.connectionManager = connectionManager
+        self.utilitiesState = utilitiesState
+        self._viewModel = State(initialValue: viewModel)
     }
 
     var body: some View {
@@ -129,9 +147,6 @@ struct ChatView: View {
                     .onTapGesture {
                         isInputFocused = false
                     }
-                    .refreshable {
-                        await viewModel.loadMessages()
-                    }
                     .onChange(of: viewModel.displayMessages.count) { _, _ in
                         if isAtBottom {
                             withAnimation(.easeOut(duration: 0.25)) {
@@ -156,16 +171,35 @@ struct ChatView: View {
         .navigationTitle(session.title.isEmpty ? "Session" : session.title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            if let utilitiesState {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            utilitiesState.isOpen.wrappedValue = true
+                        }
+                    } label: {
+                        Image(systemName: "sidebar.right")
+                            .foregroundStyle(Theme.Colors.silver)
+                    }
+                }
+            }
+
             ToolbarItem(placement: .primaryAction) {
-                if let client = connectionManager.activeAPIClient {
-                    SessionActionsMenu(
-                        session: session,
-                        viewModel: viewModel,
-                        apiClient: client
-                    )
-                } else {
-                    Image(systemName: "ellipsis")
-                        .foregroundStyle(Theme.Colors.silver)
+                HStack(spacing: Theme.Spacing.sm) {
+                    RefreshButton {
+                        await viewModel.loadMessages()
+                    }
+
+                    if let client = connectionManager.activeAPIClient {
+                        SessionActionsMenu(
+                            session: session,
+                            viewModel: viewModel,
+                            apiClient: client
+                        )
+                    } else {
+                        Image(systemName: "ellipsis")
+                            .foregroundStyle(Theme.Colors.silver)
+                    }
                 }
             }
         }

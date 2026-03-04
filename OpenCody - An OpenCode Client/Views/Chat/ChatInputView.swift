@@ -13,8 +13,11 @@ struct ChatInputView: View {
 
     @State private var text: String = ""
     @State private var showCommandPalette = false
+    @State private var showFileMentionPalette = false
+    @State private var fileMentionAttachments: [PromptAttachment] = []
     @State private var showAttachmentPicker = false
     @State private var attachmentManager = AttachmentManager()
+    @State private var isShellMode = false
 
     init(viewModel: ChatViewModel, apiClient: APIClient? = nil, isInputFocused: FocusState<Bool>.Binding) {
         self.viewModel = viewModel
@@ -33,8 +36,19 @@ struct ChatInputView: View {
         return String(text.dropFirst())
     }
 
+    /// Extract the query portion after the last "@" for file searching.
+    /// Returns nil if no active @-mention is in progress.
+    private var fileMentionQuery: String? {
+        // Find the last "@" in the text
+        guard let atRange = text.range(of: "@", options: .backwards) else { return nil }
+        let afterAt = String(text[atRange.upperBound...])
+        // If there's a space after the @, it's not an active mention
+        if afterAt.contains(" ") { return nil }
+        return afterAt
+    }
+
     var body: some View {
-        ZStack(alignment: .bottom) {
+        VStack(spacing: 0) {
             // Command palette overlay — rendered above the input bar
             if showCommandPalette, let client = apiClient {
                 CommandPaletteView(
@@ -51,7 +65,24 @@ struct ChatInputView: View {
                 .padding(.horizontal, Theme.Spacing.md)
                 .padding(.bottom, 8)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
-                .zIndex(1)
+            }
+
+            // File mention palette overlay — rendered above the input bar
+            if showFileMentionPalette, let client = apiClient {
+                FileMentionPaletteView(
+                    apiClient: client,
+                    directory: viewModel.session.directory,
+                    query: fileMentionQuery ?? "",
+                    onSelect: { filePath in
+                        handleFileMentionSelection(filePath: filePath, apiClient: client)
+                    },
+                    onDismiss: {
+                        showFileMentionPalette = false
+                    }
+                )
+                .padding(.horizontal, Theme.Spacing.md)
+                .padding(.bottom, 8)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
             }
 
             // Main input area
@@ -93,10 +124,22 @@ struct ChatInputView: View {
                             .frame(width: 32, height: 32)
                     }
 
+                    // Shell mode toggle button
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            isShellMode.toggle()
+                        }
+                    } label: {
+                        Image(systemName: isShellMode ? "terminal.fill" : "terminal")
+                            .foregroundStyle(isShellMode ? Theme.Colors.neonGreen : Theme.Colors.silver)
+                            .font(.system(size: 18))
+                            .frame(width: 32, height: 32)
+                    }
+
                     // Text input with placeholder
                     ZStack(alignment: .topLeading) {
                         if text.isEmpty {
-                            Text("Message\u{2026}")
+                            Text(isShellMode ? "Shell command\u{2026}" : "Message\u{2026}")
                                 .foregroundStyle(Theme.Colors.silver)
                                 .font(.body)
                                 .padding(.horizontal, 8)
@@ -145,16 +188,39 @@ struct ChatInputView: View {
                         let attachments = attachmentManager.attachments
                         text = ""
                         showCommandPalette = false
+                        showFileMentionPalette = false
                         if showAttachmentPicker && attachments.isEmpty {
                             withAnimation { showAttachmentPicker = false }
                         }
-                        let promptAttachments = attachments.map { a in
-                            let base64 = a.data.base64EncodedString()
-                            let dataURI = "data:\(a.mimeType);base64,\(base64)"
-                            return PromptAttachment(mime: a.mimeType, filename: a.filename, url: dataURI)
+
+                        if isShellMode {
+                            // Shell mode: send as shell command
+                            if !toSend.isEmpty {
+                                attachmentManager.clearAll()
+                                Task { await viewModel.executeShellCommand(command: toSend) }
+                            }
+                        } else if toSend.hasPrefix("/") {
+                            // Detect slash commands: "/commandName arguments..."
+                            let withoutSlash = String(toSend.dropFirst())
+                            let parts = withoutSlash.split(separator: " ", maxSplits: 1)
+                            let commandName = String(parts.first ?? "")
+                            let arguments = parts.count > 1 ? String(parts[1]) : nil
+                            if !commandName.isEmpty {
+                                attachmentManager.clearAll()
+                                Task { await viewModel.executeCommand(name: commandName, arguments: arguments) }
+                            }
+                        } else {
+                            var promptAttachments = attachments.map { a in
+                                let base64 = a.data.base64EncodedString()
+                                let dataURI = "data:\(a.mimeType);base64,\(base64)"
+                                return PromptAttachment(mime: a.mimeType, filename: a.filename, url: dataURI)
+                            }
+                            // Append file mention attachments
+                            promptAttachments.append(contentsOf: fileMentionAttachments)
+                            attachmentManager.clearAll()
+                            fileMentionAttachments.removeAll()
+                            Task { await viewModel.sendPrompt(toSend, attachments: promptAttachments) }
                         }
-                        attachmentManager.clearAll()
-                        Task { await viewModel.sendPrompt(toSend, attachments: promptAttachments) }
                     } label: {
                         Image(systemName: "arrow.up.circle.fill")
                             .foregroundStyle(canSend ? Theme.Colors.cyberBlue : Theme.Colors.smoke)
@@ -168,16 +234,53 @@ struct ChatInputView: View {
                 .background(Theme.Colors.carbon.opacity(0.96))
                 .animation(.easeInOut(duration: 0.15), value: viewModel.isGenerating)
             }
-            .zIndex(0)
         }
         .animation(.easeInOut(duration: 0.2), value: showCommandPalette)
+        .animation(.easeInOut(duration: 0.2), value: showFileMentionPalette)
         .animation(.easeInOut(duration: 0.2), value: showAttachmentPicker)
     }
 
     private func updatePaletteVisibility(for newText: String) {
-        let shouldShow = newText.hasPrefix("/") && apiClient != nil
-        if shouldShow != showCommandPalette {
-            showCommandPalette = shouldShow
+        // Slash command palette: triggers on leading "/"
+        let shouldShowCommand = newText.hasPrefix("/") && apiClient != nil
+        if shouldShowCommand != showCommandPalette {
+            showCommandPalette = shouldShowCommand
+        }
+
+        // File mention palette: triggers when there's an active @-mention
+        let shouldShowFileMention = fileMentionQuery != nil && apiClient != nil && !showCommandPalette
+        if shouldShowFileMention != showFileMentionPalette {
+            showFileMentionPalette = shouldShowFileMention
+        }
+    }
+
+    /// Handle selection of a file from the mention palette.
+    /// Fetches file content via API, creates a PromptAttachment, and replaces the @-mention text.
+    private func handleFileMentionSelection(filePath: String, apiClient: APIClient) {
+        // Remove the @query portion from the text
+        if let atRange = text.range(of: "@", options: .backwards) {
+            text = String(text[text.startIndex..<atRange.lowerBound])
+        }
+        showFileMentionPalette = false
+
+        // Fetch file content and add as attachment
+        Task {
+            do {
+                let api = FileAPI(client: apiClient)
+                let fileContent = try await api.content(path: filePath, directory: viewModel.session.directory)
+                let contentData = fileContent.content.data(using: .utf8) ?? Data()
+                let base64 = contentData.base64EncodedString()
+                let mime = fileContent.mimeType ?? "text/plain"
+                let filename = URL(fileURLWithPath: filePath).lastPathComponent
+                let dataURI = "data:\(mime);base64,\(base64)"
+                let attachment = PromptAttachment(mime: mime, filename: filename, url: dataURI)
+                fileMentionAttachments.append(attachment)
+                // Insert a visual reference in the text so the user sees what was attached
+                text += "@\(filePath) "
+            } catch {
+                // If content fetch fails, just insert the path reference as text
+                text += "@\(filePath) "
+            }
         }
     }
 }

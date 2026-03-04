@@ -77,7 +77,6 @@ struct MessageAPI: Sendable {
         #if DEBUG
         if let raw = String(data: data, encoding: .utf8) {
             let preview = raw.prefix(3000)
-            print("[MessageAPI] raw response (\(data.count) bytes): \(preview)")
         }
         #endif
         do {
@@ -85,7 +84,6 @@ struct MessageAPI: Sendable {
             #if DEBUG
             for r in result {
                 let partTypes = r.parts.map { $0.type }.joined(separator: ", ")
-                print("[MessageAPI] msg \(r.info.id) role=\(r.info.role) parts=[\(partTypes)] (\(r.parts.count))")
             }
             #endif
             return result
@@ -142,8 +140,6 @@ struct MessageAPI: Sendable {
 
         #if DEBUG
         if let jsonString = String(data: encodedBody, encoding: .utf8) {
-            print("[MessageAPI] promptAsync POST /session/\(sessionID)/prompt_async")
-            print("[MessageAPI] body: \(jsonString)")
         }
         #endif
 
@@ -157,11 +153,9 @@ struct MessageAPI: Sendable {
         do {
             try await client.requestVoid(endpoint)
             #if DEBUG
-            print("[MessageAPI] promptAsync succeeded (204)")
             #endif
         } catch {
             #if DEBUG
-            print("[MessageAPI] promptAsync FAILED: \(error)")
             #endif
             throw error
         }

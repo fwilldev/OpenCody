@@ -32,6 +32,8 @@ struct FolderPickerView: View {
 
     @State private var mode: Mode = .projects
     @State private var browsePath: String?
+    @State private var browseRootName: String?
+    @State private var browseRootAbsolute: String?
     @State private var directories: [FileNode] = []
     @State private var isLoadingDirectories: Bool = false
     @State private var directoriesError: String?
@@ -56,7 +58,6 @@ struct FolderPickerView: View {
         .background(Theme.Colors.deepBlack)
         .task {
             await loadProjects()
-            await loadPathInfo()
         }
     }
 
@@ -200,16 +201,20 @@ struct FolderPickerView: View {
 
     private var folderBrowser: some View {
         VStack(spacing: 0) {
-            if let browsePath {
-                folderBreadcrumb(path: browsePath)
-            }
-
-            if isLoadingDirectories {
-                loadingDirectoriesView
-            } else if let directoriesError {
-                directoryErrorView(directoriesError)
+            if browseRootAbsolute == nil {
+                folderRootPicker
             } else {
-                directoryList
+                if let path = currentBrowsePath {
+                    folderBreadcrumb(path: path)
+                }
+
+                if isLoadingDirectories {
+                    loadingDirectoriesView
+                } else if let directoriesError {
+                    directoryErrorView(directoriesError)
+                } else {
+                    directoryList
+                }
             }
         }
     }
@@ -230,13 +235,13 @@ struct FolderPickerView: View {
             Image(systemName: "folder")
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(Theme.Colors.cyberBlue)
-            Text(path)
+            Text(displayPath(for: path))
                 .font(Theme.Fonts.codeCaption)
                 .foregroundStyle(Theme.Colors.cyberBlue)
                 .lineLimit(1)
                 .truncationMode(.head)
             Spacer()
-            if let parent = parentPath(from: path) {
+            if let parent = parentRelativePath(from: path) {
                 Button("Up") {
                     browsePath = parent
                     Task { await loadDirectory(path: parent) }
@@ -245,8 +250,10 @@ struct FolderPickerView: View {
                 .foregroundStyle(Theme.Colors.silver)
             }
             Button("Select") {
-                selectedPath = path
-                onSelect(path)
+                if let absolute = currentAbsolutePath {
+                    selectedPath = absolute
+                    onSelect(absolute)
+                }
             }
             .font(Theme.Fonts.caption)
             .foregroundStyle(Theme.Colors.cyberBlue)
@@ -311,8 +318,9 @@ struct FolderPickerView: View {
             LazyVStack(spacing: Theme.Spacing.sm) {
                 ForEach(filteredDirectories) { node in
                     Button {
-                        browsePath = node.absolute
-                        Task { await loadDirectory(path: node.absolute) }
+                        let nextPath = normalizeRelativePath(node.path)
+                        browsePath = nextPath
+                        Task { await loadDirectory(path: nextPath) }
                     } label: {
                         HStack(spacing: Theme.Spacing.sm) {
                             Image(systemName: "folder")
@@ -344,6 +352,52 @@ struct FolderPickerView: View {
             .padding(.horizontal, Theme.Spacing.md)
             .padding(.vertical, Theme.Spacing.sm)
         }
+    }
+
+    private var folderRootPicker: some View {
+        VStack(spacing: Theme.Spacing.md) {
+            Text("Select a project to browse")
+                .font(Theme.Fonts.caption)
+                .foregroundStyle(Theme.Colors.silver)
+
+            ScrollView {
+                LazyVStack(spacing: Theme.Spacing.sm) {
+                    ForEach(filteredProjects) { project in
+                        Button {
+                            startBrowsing(project: project)
+                        } label: {
+                            HStack(spacing: Theme.Spacing.sm) {
+                                Image(systemName: "folder")
+                                    .font(.system(size: 18))
+                                    .foregroundStyle(Theme.Colors.cyberBlue)
+                                    .frame(width: 28)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(projectName(from: project.worktree))
+                                        .font(Theme.Fonts.body)
+                                        .foregroundStyle(Theme.Colors.cloud)
+                                        .lineLimit(1)
+                                    Text(project.worktree)
+                                        .font(Theme.Fonts.codeCaption)
+                                        .foregroundStyle(Theme.Colors.silver)
+                                        .lineLimit(1)
+                                        .truncationMode(.head)
+                                }
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(Theme.Fonts.caption)
+                                    .foregroundStyle(Theme.Colors.smoke)
+                            }
+                            .padding(Theme.Spacing.md)
+                            .glassCard()
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, Theme.Spacing.md)
+                .padding(.vertical, Theme.Spacing.sm)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     // MARK: - Project List
@@ -454,27 +508,13 @@ struct FolderPickerView: View {
         }
     }
 
-    private func loadPathInfo() async {
-        let fileAPI = FileAPI(client: apiClient)
-        do {
-            let info = try await fileAPI.path()
-            let homePath = info.home
-            browsePath = homePath
-            await loadDirectory(path: homePath)
-        } catch {
-            if !Task.isCancelled {
-                directoriesError = error.localizedDescription
-            }
-        }
-    }
-
     private func loadDirectory(path: String) async {
         isLoadingDirectories = true
         directoriesError = nil
 
         let fileAPI = FileAPI(client: apiClient)
         do {
-            directories = try await fileAPI.list(path: path)
+            directories = try await fileAPI.list(path: path, directory: browseRootAbsolute)
             isLoadingDirectories = false
         } catch {
             if !Task.isCancelled {
@@ -484,9 +524,47 @@ struct FolderPickerView: View {
         }
     }
 
-    private func parentPath(from path: String) -> String? {
-        let url = URL(fileURLWithPath: path).deletingLastPathComponent()
-        let parent = url.path
-        return parent == path ? nil : parent
+    private var currentBrowsePath: String? {
+        browsePath ?? "."
+    }
+
+    private var currentAbsolutePath: String? {
+        guard let rootName = browseRootName,
+              let rootAbsolute = browseRootAbsolute,
+              let path = currentBrowsePath else {
+            return nil
+        }
+        let sanitized = normalizeRelativePath(path)
+        if sanitized == "." {
+            return rootAbsolute
+        }
+        return rootAbsolute + "/" + sanitized
+    }
+
+    private func parentRelativePath(from path: String) -> String? {
+        let sanitized = normalizeRelativePath(path)
+        if sanitized == "." { return nil }
+        let parent = (sanitized as NSString).deletingLastPathComponent
+        return parent.isEmpty || parent == "." ? "." : parent
+    }
+
+    private func startBrowsing(project: Project) {
+        let rootName = projectName(from: project.worktree)
+        browseRootName = rootName
+        browseRootAbsolute = project.worktree
+        browsePath = "."
+        Task { await loadDirectory(path: ".") }
+    }
+
+    private func normalizeRelativePath(_ path: String) -> String {
+        let sanitized = path.hasPrefix("./") ? String(path.dropFirst(2)) : path
+        return sanitized.isEmpty ? "." : sanitized
+    }
+
+    private func displayPath(for path: String) -> String {
+        let sanitized = normalizeRelativePath(path)
+        let rootName = browseRootName ?? ""
+        if sanitized == "." { return rootName.isEmpty ? "." : rootName }
+        return rootName.isEmpty ? sanitized : "\(rootName)/\(sanitized)"
     }
 }
