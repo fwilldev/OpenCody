@@ -184,19 +184,7 @@ struct ServerListView: View {
     // MARK: - Helpers
 
     private func connectionStatus(for server: ServerConnection) -> ConnectionStatus {
-        let state = connectionManager.connectionState(for: server.id)
-        switch state {
-        case .connected:
-            return .active
-        case .connecting:
-            return .connecting
-        case .reconnecting:
-            return .connecting
-        case .disconnected(let error):
-            return error != nil ? .error : .idle
-        case .idle:
-            return .idle
-        }
+        connectionManager.connectionState(for: server.id).displayStatus
     }
 
     // MARK: - Actions

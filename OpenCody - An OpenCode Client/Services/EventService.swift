@@ -9,12 +9,14 @@ enum ConnectionState: Sendable, Equatable {
     case connected
     case reconnecting(attempt: Int)
     case disconnected(error: String?)
+    case offline
 
     static func == (lhs: ConnectionState, rhs: ConnectionState) -> Bool {
         switch (lhs, rhs) {
         case (.idle, .idle),
              (.connecting, .connecting),
-             (.connected, .connected):
+             (.connected, .connected),
+             (.offline, .offline):
             return true
         case (.reconnecting(let a), .reconnecting(let b)):
             return a == b
@@ -22,6 +24,21 @@ enum ConnectionState: Sendable, Equatable {
             return a == b
         default:
             return false
+        }
+    }
+}
+
+// MARK: - ConnectionState → ConnectionStatus
+
+extension ConnectionState {
+    /// Maps connection state to the UI-facing `ConnectionStatus` for badges and indicators.
+    var displayStatus: ConnectionStatus {
+        switch self {
+        case .connected: return .active
+        case .connecting, .reconnecting: return .connecting
+        case .disconnected(let error): return error != nil ? .error : .idle
+        case .idle: return .idle
+        case .offline: return .offline
         }
     }
 }
@@ -40,7 +57,7 @@ final class EventService {
     // MARK: - Published State
 
     /// Current connection state, observable by SwiftUI views.
-    private(set) var connectionState: ConnectionState = .idle
+    var connectionState: ConnectionState = .idle
 
     // MARK: - Event Dispatch
 
@@ -105,6 +122,8 @@ final class EventService {
             connectionState = .reconnecting(attempt: attempt)
         case .disconnected:
             connectionState = .disconnected(error: nil)
+        case .offline:
+            connectionState = .offline
         }
     }
 }

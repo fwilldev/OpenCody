@@ -5,22 +5,12 @@
 
 import SwiftUI
 
-/// Shows provider details: model list + API key management.
+/// Shows provider details: model list.
 struct ProviderDetailView: View {
     let provider: Provider
     let isConnected: Bool
-    let apiClient: APIClient
 
     @Environment(\.dismiss) private var dismiss
-    @State private var authMethods: [ProviderAuthMethod] = []
-    @State private var isLoadingMethods = true
-    @State private var apiKey = ""
-    @State private var isSaving = false
-    @State private var saveError: String? = nil
-    @State private var saveSuccess = false
-    @State private var selectedTab = 0
-
-    private var providerAPI: ProviderAPI { ProviderAPI(client: apiClient) }
     private var sortedModels: [Model] { provider.models.values.sorted { $0.name < $1.name } }
 
     var body: some View {
@@ -32,19 +22,11 @@ struct ProviderDetailView: View {
                     // Header
                     providerHeader
 
-                    // Tab picker
-                    Picker("", selection: $selectedTab) {
-                        Text("Models").tag(0)
-                        Text("Authentication").tag(1)
-                    }
-                    .pickerStyle(.segmented)
-                    .padding(.horizontal, Theme.Spacing.md)
-
                     // Content
-                    if selectedTab == 0 {
+                    if isConnected {
                         modelsSection
                     } else {
-                        authSection
+                        notConnectedSection
                     }
                 }
                 .padding(.bottom, Theme.Spacing.xl)
@@ -52,11 +34,6 @@ struct ProviderDetailView: View {
         }
         .navigationTitle(provider.name)
         .navigationBarTitleDisplayMode(.inline)
-        .task { await loadAuthMethods() }
-        .overlay(
-            saveSuccessBanner,
-            alignment: .top
-        )
     }
 
     // MARK: - Header
@@ -116,126 +93,24 @@ struct ProviderDetailView: View {
         .padding(.horizontal, Theme.Spacing.md)
     }
 
-    // MARK: - Auth Section
+    // MARK: - Not Connected Section
 
-    @ViewBuilder
-    private var authSection: some View {
-        VStack(spacing: Theme.Spacing.md) {
-            if isLoadingMethods {
-                GlassCard {
-                    HStack {
-                        Spacer()
-                        ProgressView()
-                            .tint(Theme.Colors.cyberBlue)
-                        Spacer()
-                    }
-                }
-                .padding(.horizontal, Theme.Spacing.md)
-            } else if authMethods.isEmpty {
-                GlassCard {
-                    Text("No authentication methods available for this provider.")
-                        .font(Theme.Fonts.caption)
-                        .foregroundStyle(Theme.Colors.silver)
-                        .multilineTextAlignment(.center)
-                }
-                .padding(.horizontal, Theme.Spacing.md)
-            } else {
-                ForEach(authMethods, id: \.type) { method in
-                    if method.type == .api {
-                        apiKeySection(method: method)
-                    }
-                }
-            }
-
-            // Environment variables hint
-            if !provider.env.isEmpty {
-                GlassCard {
-                    VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-                        Label("Environment Variables", systemImage: "terminal")
-                            .font(Theme.Fonts.captionBold)
-                            .foregroundStyle(Theme.Colors.silver)
-                        ForEach(provider.env, id: \.self) { envVar in
-                            Text(envVar)
-                                .font(.system(size: 12, design: .monospaced))
-                                .foregroundStyle(Theme.Colors.neonGreen)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 6)
-                                        .fill(Theme.Colors.neonGreen.opacity(0.08))
-                                )
-                        }
-                    }
-                }
-                .padding(.horizontal, Theme.Spacing.md)
-            }
-        }
-    }
-
-    private func apiKeySection(method: ProviderAuthMethod) -> some View {
+    private var notConnectedSection: some View {
         GlassCard {
-            VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-                Label(method.label, systemImage: "key")
-                    .font(Theme.Fonts.bodyBold)
-                    .foregroundStyle(Theme.Colors.cloud)
+            VStack(spacing: Theme.Spacing.md) {
+                Image(systemName: "server.rack")
+                    .font(.system(size: 32))
+                    .foregroundStyle(Theme.Colors.silver)
 
-                GlassTextField(
-                    placeholder: "Enter API key",
-                    text: $apiKey,
-                    isSecure: true
-                )
-
-                if let err = saveError {
-                    Text(err)
-                        .font(Theme.Fonts.caption)
-                        .foregroundStyle(Theme.Colors.hotPink)
-                }
-
-                Button {
-                    Task { await saveApiKey(method: method) }
-                } label: {
-                    HStack {
-                        Spacer()
-                        if isSaving {
-                            ProgressView()
-                                .scaleEffect(0.8)
-                                .tint(.white)
-                        } else {
-                            Text("Save API Key")
-                        }
-                        Spacer()
-                    }
-                }
-                .primaryButton()
-                .disabled(apiKey.isEmpty || isSaving)
-                .opacity(apiKey.isEmpty ? 0.5 : 1)
+                Text("Manage your Providers on your Server")
+                    .font(Theme.Fonts.body)
+                    .foregroundStyle(Theme.Colors.silver)
+                    .multilineTextAlignment(.center)
             }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, Theme.Spacing.md)
         }
         .padding(.horizontal, Theme.Spacing.md)
-    }
-
-    // MARK: - Save Banner
-
-    @ViewBuilder
-    private var saveSuccessBanner: some View {
-        if saveSuccess {
-            HStack(spacing: Theme.Spacing.sm) {
-                Image(systemName: "checkmark.circle.fill")
-                    .foregroundStyle(Theme.Colors.neonGreen)
-                Text("API key saved successfully")
-                    .font(Theme.Fonts.captionBold)
-                    .foregroundStyle(Theme.Colors.cloud)
-            }
-            .padding(.horizontal, Theme.Spacing.lg)
-            .padding(.vertical, Theme.Spacing.sm)
-            .background(
-                Capsule()
-                    .fill(Theme.Colors.neonGreen.opacity(0.15))
-                    .overlay(Capsule().stroke(Theme.Colors.neonGreen.opacity(0.3), lineWidth: 1))
-            )
-            .padding(.top, Theme.Spacing.sm)
-            .transition(.move(edge: .top).combined(with: .opacity))
-        }
     }
 
     // MARK: - Helpers
@@ -257,40 +132,6 @@ struct ProviderDetailView: View {
         }
     }
 
-    private func loadAuthMethods() async {
-        isLoadingMethods = true
-        do {
-            authMethods = try await providerAPI.authMethods(providerID: provider.id)
-        } catch {
-            // Silently fail — just show no methods
-            authMethods = []
-        }
-        isLoadingMethods = false
-    }
-
-    private func saveApiKey(method: ProviderAuthMethod) async {
-        isSaving = true
-        saveError = nil
-        do {
-            try await providerAPI.authenticateWithApiKey(
-                providerID: provider.id,
-                method: method.type.rawValue,
-                apiKey: apiKey
-            )
-            apiKey = ""
-            withAnimation {
-                saveSuccess = true
-            }
-            // Auto-dismiss the success banner after 2s
-            try? await Task.sleep(for: .seconds(2))
-            withAnimation {
-                saveSuccess = false
-            }
-        } catch {
-            saveError = error.localizedDescription
-        }
-        isSaving = false
-    }
 }
 
 // MARK: - ModelRowView

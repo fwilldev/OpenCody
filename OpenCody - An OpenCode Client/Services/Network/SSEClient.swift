@@ -9,6 +9,7 @@ enum SSEClientState: Sendable {
     case connected
     case reconnecting(attempt: Int)
     case disconnected
+    case offline
 }
 
 // MARK: - SSEClient
@@ -40,6 +41,7 @@ final class SSEClient {
     let directoryFilter: String?
     let onEvent: @MainActor (SSEEvent) -> Void
     let onStateChange: @MainActor (SSEClientState) -> Void
+    let maxReconnectAttempts: Int
 
     private var eventSource: EventSource?
 
@@ -49,12 +51,14 @@ final class SSEClient {
         baseURL: String,
         authHeader: String?,
         directoryFilter: String?,
+        maxReconnectAttempts: Int = 5,
         onEvent: @escaping @MainActor (SSEEvent) -> Void,
         onStateChange: @escaping @MainActor (SSEClientState) -> Void
     ) {
         self.baseURL = baseURL
         self.authHeader = authHeader
         self.directoryFilter = directoryFilter
+        self.maxReconnectAttempts = maxReconnectAttempts
         self.onEvent = onEvent
         self.onStateChange = onStateChange
     }
@@ -73,19 +77,25 @@ final class SSEClient {
         let onStateChange = self.onStateChange
         let normalizeEventFn = self.normalizeEvent(eventName:data:)
         let shouldHandleEventFn = self.shouldHandleEvent(data:)
+        let maxAttempts = self.maxReconnectAttempts
 
         // Thread-safe counter for reconnect attempts (called from LDSwiftEventSource's internal DispatchQueue)
         let reconnectCounter = Counter()
 
         let handler = Handler(
             onOpenedCallback: {
+                reconnectCounter.reset()
                 Task { @MainActor in
                     onStateChange(.connected)
                 }
             },
             onClosedCallback: {
                 Task { @MainActor in
-                    onStateChange(.disconnected)
+                    if reconnectCounter.hasReached(maxAttempts) {
+                        onStateChange(.offline)
+                    } else {
+                        onStateChange(.disconnected)
+                    }
                 }
             },
             onMessageCallback: { eventType, messageEvent in
@@ -108,7 +118,11 @@ final class SSEClient {
                 reconnectCounter.increment()
                 let attempt = reconnectCounter.value
                 Task { @MainActor in
-                    onStateChange(.reconnecting(attempt: attempt))
+                    if attempt >= maxAttempts {
+                        onStateChange(.offline)
+                    } else {
+                        onStateChange(.reconnecting(attempt: attempt))
+                    }
                 }
             }
         )
@@ -125,6 +139,9 @@ final class SSEClient {
                 if code == 401 || code == 403 {
                     return .shutdown
                 }
+            }
+            if reconnectCounter.hasReached(maxAttempts) {
+                return .shutdown
             }
             return .proceed
         }
@@ -250,4 +267,8 @@ private final class Counter: @unchecked Sendable {
     var value: Int { lock.withLock { _value } }
 
     func increment() { lock.withLock { _value += 1 } }
+
+    func reset() { lock.withLock { _value = 0 } }
+
+    func hasReached(_ limit: Int) -> Bool { lock.withLock { _value >= limit } }
 }

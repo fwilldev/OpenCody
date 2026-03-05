@@ -6,6 +6,9 @@
 import SwiftUI
 import HighlightSwift
 import UniformTypeIdentifiers
+#if canImport(UIKit)
+import UIKit
+#endif
 
 /// Sheet presenting a file explorer for the session's project directory.
 /// Lets the user browse directory trees and view file contents using
@@ -323,8 +326,6 @@ private struct FileContentView: View {
     @State private var content: FileContent? = nil
     @State private var isLoading = true
     @State private var error: String? = nil
-    @State private var showShareSheet = false
-    @State private var exportFileURL: URL? = nil
 
     private var fileName: String {
         URL(fileURLWithPath: filePath).lastPathComponent
@@ -374,6 +375,20 @@ private struct FileContentView: View {
         }
     }
 
+    private var fileExtension: String {
+        URL(fileURLWithPath: filePath).pathExtension.lowercased()
+    }
+
+    private var isImageFile: Bool {
+        if let mime = content?.mimeType?.lowercased(), mime.hasPrefix("image/") {
+            return true
+        }
+        if let type = UTType(filenameExtension: fileExtension) {
+            return type.conforms(to: .image)
+        }
+        return false
+    }
+
     var body: some View {
         NavigationStack {
             ZStack {
@@ -395,7 +410,9 @@ private struct FileContentView: View {
                     }
                     .padding()
                 } else if let content {
-                    if content.type == .binary {
+                    if isImageFile, let data = fileData(from: content) {
+                        imageContentView(data: data)
+                    } else if content.type == .binary {
                         EmptyStateView(
                             systemImage: "doc.zipper",
                             title: "Binary File",
@@ -420,7 +437,9 @@ private struct FileContentView: View {
                             Text("\(lineCount) lines")
                                 .font(.caption)
                                 .foregroundStyle(Theme.Colors.silver)
+                        }
 
+                        if content != nil {
                             Button {
                                 saveFileToDevice()
                             } label: {
@@ -433,12 +452,6 @@ private struct FileContentView: View {
             }
         }
         .presentationBackground(Theme.Colors.carbon)
-        .sheet(isPresented: $showShareSheet) {
-            if let url = exportFileURL {
-                ShareSheet(activityItems: [url])
-                    .presentationDetents([.medium, .large])
-            }
-        }
         .task {
             await loadContent()
         }
@@ -473,6 +486,34 @@ private struct FileContentView: View {
     }
 
     @ViewBuilder
+    private func imageContentView(data: Data) -> some View {
+        #if canImport(UIKit)
+        if let image = UIImage(data: data) {
+            ScrollView([.horizontal, .vertical]) {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxWidth: .infinity)
+                    .padding(Theme.Spacing.md)
+            }
+            .background(Theme.Colors.carbon)
+        } else {
+            EmptyStateView(
+                systemImage: "photo",
+                title: "Image Preview Failed",
+                message: "Unable to decode this image file."
+            )
+        }
+        #else
+        EmptyStateView(
+            systemImage: "photo",
+            title: "Image Preview Unavailable",
+            message: "Image previews are not supported on this platform."
+        )
+        #endif
+    }
+
+    @ViewBuilder
     private func codeTextView(_ code: String) -> some View {
         if let language = highlightLanguage {
             CodeText(code)
@@ -489,18 +530,67 @@ private struct FileContentView: View {
     // MARK: - File Saving
 
     private func saveFileToDevice() {
-        guard let content, content.type != .binary else { return }
+        guard let content else { return }
 
         let tempDir = FileManager.default.temporaryDirectory
         let fileURL = tempDir.appendingPathComponent(fileName)
 
         do {
-            try content.content.write(to: fileURL, atomically: true, encoding: .utf8)
-            exportFileURL = fileURL
-            showShareSheet = true
+            if let data = fileData(from: content) {
+                try data.write(to: fileURL, options: .atomic)
+            } else {
+                try content.content.write(to: fileURL, atomically: true, encoding: .utf8)
+            }
+            presentShareSheet(for: fileURL)
         } catch {
             self.error = "Failed to prepare file for saving: \(error.localizedDescription)"
         }
+    }
+
+    @MainActor
+    private func presentShareSheet(for url: URL) {
+        let controller = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+        if let popover = controller.popoverPresentationController,
+           let root = rootViewController() {
+            popover.sourceView = root.view
+            popover.sourceRect = CGRect(x: root.view.bounds.midX, y: root.view.bounds.midY, width: 1, height: 1)
+        }
+        rootViewController()?.present(controller, animated: true)
+    }
+
+    @MainActor
+    private func rootViewController() -> UIViewController? {
+        guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene else {
+            return nil
+        }
+        return scene.windows.first?.rootViewController
+    }
+
+    private func fileData(from content: FileContent) -> Data? {
+        if let encoded = content.encoding?.lowercased(), encoded.contains("base64") {
+            return decodeBase64Payload(content.content)
+        }
+        if content.content.hasPrefix("data:") {
+            return decodeBase64Payload(content.content)
+        }
+        if content.type == .binary {
+            return decodeBase64Payload(content.content)
+        }
+        if isImageFile {
+            return decodeBase64Payload(content.content) ?? content.content.data(using: .utf8)
+        }
+        return content.content.data(using: .utf8)
+    }
+
+    private func decodeBase64Payload(_ value: String) -> Data? {
+        let payload: String
+        if let commaIndex = value.firstIndex(of: ",") {
+            payload = String(value[value.index(after: commaIndex)...])
+        } else {
+            payload = value
+        }
+        let sanitized = payload.replacingOccurrences(of: "\n", with: "")
+        return Data(base64Encoded: sanitized)
     }
 
     private func loadContent() async {
@@ -516,15 +606,4 @@ private struct FileContentView: View {
     }
 }
 
-// MARK: - ShareSheet (UIKit Bridge)
-
-/// UIViewControllerRepresentable wrapper for UIActivityViewController.
-private struct ShareSheet: UIViewControllerRepresentable {
-    let activityItems: [Any]
-
-    func makeUIViewController(context: Context) -> UIActivityViewController {
-        UIActivityViewController(activityItems: activityItems, applicationActivities: nil)
-    }
-
-    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
-}
+// MARK: - ShareSheet

@@ -9,18 +9,18 @@ import SwiftUI
 
 // MARK: - CreateSessionSheet
 
-/// Sheet for creating a new coding session with folder, agent, model, and provider selection.
+/// Sheet for creating a new coding session with folder selection.
+/// The default agent and model are applied automatically when the session is opened.
 struct CreateSessionSheet: View {
     let viewModel: DashboardViewModel
     let connectionManager: ConnectionManager
     let preselectedPath: String?
+    var onSessionCreated: ((Session) -> Void)?
     @Environment(\.dismiss) private var dismiss
 
     // MARK: - Form State
 
     @State private var selectedPath: String
-    @State private var agents: [Agent] = []
-    @State private var selectedAgent: Agent?
 
     @State private var isCreating: Bool = false
     @State private var loadError: String?
@@ -31,11 +31,13 @@ struct CreateSessionSheet: View {
     init(
         viewModel: DashboardViewModel,
         connectionManager: ConnectionManager,
-        preselectedPath: String? = nil
+        preselectedPath: String? = nil,
+        onSessionCreated: ((Session) -> Void)? = nil
     ) {
         self.viewModel = viewModel
         self.connectionManager = connectionManager
         self.preselectedPath = preselectedPath
+        self.onSessionCreated = onSessionCreated
         self._selectedPath = State(initialValue: preselectedPath ?? "")
     }
 
@@ -58,9 +60,6 @@ struct CreateSessionSheet: View {
                     } else {
                         fixedFolderSection
                     }
-
-                    // Agent section
-                    agentSection
 
                 }
                 .padding(.vertical, Theme.Spacing.md)
@@ -91,9 +90,6 @@ struct CreateSessionSheet: View {
                     .foregroundStyle(selectedPath.isEmpty ? Theme.Colors.smoke : Theme.Colors.cyberBlue)
                     .disabled(selectedPath.isEmpty || isCreating)
                 }
-            }
-            .task {
-                await loadFormData()
             }
         }
         .sheet(isPresented: $showFolderPicker) {
@@ -164,58 +160,6 @@ struct CreateSessionSheet: View {
         .padding(.horizontal, Theme.Spacing.md)
     }
 
-    private var agentSection: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-            sectionHeader("Agent")
-
-            if agents.isEmpty {
-                Text("Loading agents...")
-                    .font(Theme.Fonts.caption)
-                    .foregroundStyle(Theme.Colors.smoke)
-                    .padding(Theme.Spacing.md)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .glassCard()
-            } else {
-                ForEach(agents.filter { !($0.hidden ?? false) }) { agent in
-                    Button {
-                        selectedAgent = agent
-                    } label: {
-                        HStack {
-                            VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
-                                Text(agent.name)
-                                    .font(Theme.Fonts.body)
-                                    .foregroundStyle(Theme.Colors.cloud)
-                                if let description = agent.description {
-                                    Text(description)
-                                        .font(Theme.Fonts.caption)
-                                        .foregroundStyle(Theme.Colors.silver)
-                                        .lineLimit(2)
-                                }
-                            }
-                            Spacer()
-                            if selectedAgent?.id == agent.id {
-                                Image(systemName: "checkmark.circle")
-                                    .foregroundStyle(Theme.Colors.neonGreen)
-                            }
-                        }
-                        .padding(Theme.Spacing.md)
-                        .glassCard()
-                        .overlay(
-                            RoundedRectangle(cornerRadius: Theme.Radius.card)
-                                .stroke(
-                                    selectedAgent?.id == agent.id
-                                        ? Theme.Colors.neonGreen.opacity(0.4)
-                                        : Color.clear,
-                                    lineWidth: 1
-                                )
-                        )
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-        }
-        .padding(.horizontal, Theme.Spacing.md)
-    }
 
 
     // MARK: - Helpers
@@ -228,23 +172,6 @@ struct CreateSessionSheet: View {
     }
 
 
-    // MARK: - Data Loading
-
-    private func loadFormData() async {
-        guard let client = connectionManager.activeAPIClient else {
-            loadError = "No active server connection"
-            return
-        }
-
-        do {
-            let agentAPI = AgentAPI(client: client)
-            agents = try await agentAPI.list()
-        } catch {
-            loadError = "Failed to load agents: \(error.localizedDescription)"
-        }
-
-    }
-
     // MARK: - Actions
 
     private func createSession() {
@@ -253,12 +180,8 @@ struct CreateSessionSheet: View {
 
         Task {
             do {
-                _ = try await viewModel.createSession(
-                    path: selectedPath,
-                    agentName: selectedAgent?.name,
-                    modelID: nil,
-                    providerID: nil
-                )
+                let session = try await viewModel.createSession(path: selectedPath)
+                onSessionCreated?(session)
                 dismiss()
             } catch {
                 loadError = "Failed to create session: \(error.localizedDescription)"

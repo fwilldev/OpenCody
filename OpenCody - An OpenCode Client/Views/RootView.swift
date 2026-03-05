@@ -5,7 +5,12 @@ struct RootView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var router = AppRouter()
     @State private var connectionManager = ConnectionManager()
+    @State private var notificationStore = NotificationStore()
     @StateObject private var serverStore = ServerStoreModel()
+
+    /// Notification manager — created lazily once dependencies are available.
+    @State private var notificationManager: SessionNotificationManager?
+
     var body: some View {
         Group {
             if sizeClass == .compact {
@@ -45,6 +50,18 @@ struct RootView: View {
         }
         .task {
             serverStore.load()
+
+            // Start notification observation
+            let manager = SessionNotificationManager(
+                connectionManager: connectionManager,
+                router: router,
+                store: notificationStore
+            )
+            manager.startObserving()
+            notificationManager = manager
+        }
+        .onDisappear {
+            notificationManager?.stopObserving()
         }
         .environmentObject(serverStore)
     }

@@ -17,6 +17,12 @@ struct iPadSidebarView: View {
     @EnvironmentObject private var serverStore: ServerStoreModel
     @State private var expandedProjects: Set<String> = []
 
+    /// Whether the active server's connection is in the offline state.
+    private var isActiveServerOffline: Bool {
+        guard let id = connectionManager.activeServerID else { return false }
+        return connectionManager.connectionState(for: id) == .offline
+    }
+
     // MARK: - Init
 
     init(
@@ -61,7 +67,29 @@ struct iPadSidebarView: View {
 
             // MARK: Projects
             Section {
-                if connectionManager.activeAPIClient == nil && !serverStore.servers.isEmpty {
+                if isActiveServerOffline {
+                    VStack(spacing: Theme.Spacing.sm) {
+                        Image(systemName: "wifi.slash")
+                            .font(.system(size: 28))
+                            .foregroundStyle(Theme.Colors.hotPink)
+                        Text("Server Offline")
+                            .font(Theme.Fonts.bodyBold)
+                            .foregroundStyle(Theme.Colors.cloud)
+                        Text("Could not reach server.")
+                            .font(Theme.Fonts.caption)
+                            .foregroundStyle(Theme.Colors.silver)
+                        Button("Reconnect") {
+                            guard let id = connectionManager.activeServerID else { return }
+                            Task {
+                                await connectionManager.retryConnection(for: id)
+                            }
+                        }
+                        .font(Theme.Fonts.captionBold)
+                        .foregroundStyle(Theme.Colors.cyberBlue)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, Theme.Spacing.lg)
+                } else if connectionManager.activeAPIClient == nil && !serverStore.servers.isEmpty {
                     VStack(spacing: Theme.Spacing.sm) {
                         ProgressView()
                             .tint(Theme.Colors.cyberBlue)
@@ -90,12 +118,14 @@ struct iPadSidebarView: View {
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, Theme.Spacing.lg)
-                } else if viewModel.sessions.isEmpty && !viewModel.isLoading {
+                } else if viewModel.activeSessions.isEmpty && !viewModel.isLoading {
                     Text("No sessions")
                         .font(Theme.Fonts.caption)
                         .foregroundStyle(Theme.Colors.silver)
                 } else {
                     ForEach(sessionsByProject, id: \.key) { project in
+                        let isClosed = viewModel.isProjectClosed(directory: project.directory)
+
                         Button {
                             selectedProjectKey = project.key
                         } label: {
@@ -108,10 +138,63 @@ struct iPadSidebarView: View {
                                     .foregroundStyle(Theme.Colors.cloud)
                                     .lineLimit(1)
                             }
+                            .opacity(isClosed ? 0.5 : 1.0)
                         }
                         .buttonStyle(.plain)
                         .tag(project.key)
                         .listRowBackground(glassRowBackground)
+                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                            if isClosed {
+                                Button {
+                                    withAnimation { viewModel.reopenProject(directory: project.directory) }
+                                } label: {
+                                    Label("Open", systemImage: "eye")
+                                }
+                                .tint(Color.blue)
+                            } else {
+                                Button {
+                                    withAnimation { viewModel.closeProject(directory: project.directory) }
+                                } label: {
+                                    Label("Close", systemImage: "eye.slash")
+                                }
+                                .tint(.orange)
+                            }
+                        }
+                        .contextMenu {
+                            if isClosed {
+                                Button {
+                                    withAnimation { viewModel.reopenProject(directory: project.directory) }
+                                } label: {
+                                    Label("Reopen Project", systemImage: "eye")
+                                }
+                            } else {
+                                Button {
+                                    withAnimation { viewModel.closeProject(directory: project.directory) }
+                                } label: {
+                                    Label("Close Project", systemImage: "eye.slash")
+                                }
+                            }
+                        }
+                    }
+
+                    // Show/hide closed projects toggle
+                    if !viewModel.closedDirectories.isEmpty {
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.25)) {
+                                viewModel.showClosedProjects.toggle()
+                            }
+                        } label: {
+                            HStack(spacing: Theme.Spacing.sm) {
+                                Image(systemName: viewModel.showClosedProjects ? "eye.slash" : "eye")
+                                    .font(.system(size: 11, weight: .medium))
+                                    .foregroundStyle(Theme.Colors.smoke)
+                                Text(viewModel.showClosedProjects ? "Hide Closed" : "Show Closed")
+                                    .font(Theme.Fonts.caption)
+                                    .foregroundStyle(Theme.Colors.smoke)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .listRowBackground(Color.clear)
                     }
                 }
             } header: {
@@ -279,40 +362,37 @@ struct iPadSidebarView: View {
         case .connecting, .reconnecting: return "Connecting..."
         case .disconnected(let error): return error != nil ? "Error" : "Disconnected"
         case .idle: return "Idle"
+        case .offline: return "Offline"
         }
     }
 
     private var activeStatusColor: Color {
         guard let id = connectionManager.activeServerID else { return ConnectionStatus.idle.color }
-        return connectionStatusFrom(connectionManager.connectionState(for: id)).color
+        return connectionManager.connectionState(for: id).displayStatus.color
     }
 
     private func statusColor(for server: ServerConnection) -> Color {
-        connectionStatusFrom(connectionManager.connectionState(for: server.id)).color
+        connectionManager.connectionState(for: server.id).displayStatus.color
     }
 
     // MARK: - Session helpers removed
 
-    private func connectionStatusFrom(_ state: ConnectionState) -> ConnectionStatus {
-        switch state {
-        case .connected: return .active
-        case .connecting, .reconnecting: return .connecting
-        case .disconnected(let error): return error != nil ? .error : .idle
-        case .idle: return .idle
-        }
-    }
-
     // MARK: - Delete helpers removed
 
-    private var sessionsByProject: [(key: String, sessions: [Session])] {
-        let grouped = Dictionary(grouping: viewModel.sessions) { session -> String in
+    private var sessionsByProject: [(key: String, sessions: [Session], directory: String)] {
+        let grouped = Dictionary(grouping: viewModel.activeSessions) { session -> String in
             let components = session.directory
                 .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
                 .split(separator: "/")
             return components.last.map(String.init) ?? session.directory
         }
+        let closed = viewModel.closedDirectories
         return grouped
             .sorted { $0.key.lowercased() < $1.key.lowercased() }
-            .map { (key: $0.key, sessions: $0.value.sorted { $0.time.updated > $1.time.updated }) }
+            .map { (key: $0.key, sessions: $0.value.sorted { $0.time.updated > $1.time.updated }, directory: $0.value.first?.directory ?? "") }
+            .filter { group in
+                if viewModel.showClosedProjects { return true }
+                return !closed.contains(group.directory)
+            }
     }
 }

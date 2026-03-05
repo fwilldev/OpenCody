@@ -21,6 +21,7 @@ struct SessionActionsMenu: View {
     @State private var showForkAlert = false
     @State private var forkedSessionID: String? = nil
     @State private var showFileExplorer = false
+    @State private var showContextUsage = false
 
     var body: some View {
         Menu {
@@ -29,6 +30,13 @@ struct SessionActionsMenu: View {
                 UIPasteboard.general.string = session.id
             } label: {
                 Label("Copy Session ID", systemImage: "doc.on.doc")
+            }
+
+            // Context Usage
+            Button {
+                showContextUsage = true
+            } label: {
+                Label("Context Usage", systemImage: "chart.bar")
             }
 
             Divider()
@@ -87,11 +95,25 @@ struct SessionActionsMenu: View {
                 Label("Unrevert", systemImage: "arrow.uturn.forward")
             }
 
-            // Share
-            Button {
-                Task { await shareSession() }
-            } label: {
-                Label("Share", systemImage: "square.and.arrow.up")
+            // Share / Unshare
+            if session.share != nil {
+                Button {
+                    Task { await unshareSession() }
+                } label: {
+                    Label("Unshare", systemImage: "link.badge.plus")
+                }
+
+                Button {
+                    Task { await shareSession() }
+                } label: {
+                    Label("Copy Share Link", systemImage: "doc.on.doc.fill")
+                }
+            } else {
+                Button {
+                    Task { await shareSession() }
+                } label: {
+                    Label("Share", systemImage: "square.and.arrow.up")
+                }
             }
 
             Divider()
@@ -119,6 +141,9 @@ struct SessionActionsMenu: View {
         }
         .sheet(isPresented: $showFileExplorer) {
             FileExplorerView(session: session, apiClient: apiClient)
+        }
+        .sheet(isPresented: $showContextUsage) {
+            ContextUsageView(session: session, viewModel: viewModel, apiClient: apiClient)
         }
         .sheet(isPresented: $showSummary) {
             SessionSummaryView(sessionTitle: session.title)
@@ -230,6 +255,18 @@ struct SessionActionsMenu: View {
                 } else {
                     successMessage = "Share link copied to clipboard."
                 }
+            }
+        } catch {
+            actionError = error.localizedDescription
+        }
+    }
+
+    private func unshareSession() async {
+        do {
+            let api = SessionAPI(client: apiClient)
+            try await api.unshare(id: session.id)
+            await MainActor.run {
+                successMessage = "Session unshared."
             }
         } catch {
             actionError = error.localizedDescription

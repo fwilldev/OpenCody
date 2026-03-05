@@ -102,6 +102,8 @@ struct SessionTime: Codable, Sendable {
     let updated: Double
     /// Unix timestamp (seconds), present during compaction
     let compacting: Double?
+    /// Unix timestamp (seconds), present when session is archived
+    let archived: Double?
 }
 
 // MARK: - SessionRevert

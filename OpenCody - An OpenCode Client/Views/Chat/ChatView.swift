@@ -167,6 +167,11 @@ struct ChatView: View {
             if let permission = viewModel.pendingPermission {
                 permissionOverlay(permission: permission)
             }
+
+            // Question dock overlay
+            if let questionRequest = viewModel.activeQuestionRequest {
+                SessionQuestionDock(request: questionRequest, viewModel: viewModel)
+            }
         }
         .navigationTitle(session.title.isEmpty ? "Session" : session.title)
         .navigationBarTitleDisplayMode(.inline)

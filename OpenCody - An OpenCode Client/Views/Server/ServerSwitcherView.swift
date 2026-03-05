@@ -26,7 +26,7 @@ struct ServerSwitcherView: View {
 
     private var activeStatus: ConnectionStatus {
         guard let id = connectionManager.activeServerID else { return .idle }
-        return connectionStatusFrom(connectionManager.connectionState(for: id))
+        return connectionManager.connectionState(for: id).displayStatus
     }
 
     // MARK: - Body
@@ -60,7 +60,7 @@ struct ServerSwitcherView: View {
     @ViewBuilder
     private func serverMenuRow(for server: ServerConnection) -> some View {
         let state = connectionManager.connectionState(for: server.id)
-        let status = connectionStatusFrom(state)
+        let status = state.displayStatus
         let isActive = server.id == connectionManager.activeServerID
 
         Label {
@@ -108,20 +108,4 @@ struct ServerSwitcherView: View {
         )
     }
 
-    // MARK: - Helpers
-
-    private func connectionStatusFrom(_ state: ConnectionState) -> ConnectionStatus {
-        switch state {
-        case .connected:
-            return .active
-        case .connecting:
-            return .connecting
-        case .reconnecting:
-            return .connecting
-        case .disconnected(let error):
-            return error != nil ? .error : .idle
-        case .idle:
-            return .idle
-        }
-    }
 }

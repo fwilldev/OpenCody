@@ -221,7 +221,8 @@ final class ConnectionManager {
     ///
     /// Retrieves the stored password from Keychain and calls `connect(server:password:)`.
     /// On success, sets this server as the active server.
-    /// Silently ignores connection failures (caller can observe `connectionState` for feedback).
+    /// On failure, stores an offline connection so the UI can show the offline state
+    /// with a reconnect button.
     ///
     /// - Parameter server: The server to connect and activate.
     func connectAndActivate(server: ServerConnection) {
@@ -232,7 +233,28 @@ final class ConnectionManager {
         }
         let password = (try? KeychainService.retrieve(for: server.keychainIdentifier)) ?? ""
         Task {
-            try? await connect(server: server, password: password)
+            do {
+                try await connect(server: server, password: password)
+            } catch {
+                // Server unreachable — store an offline connection so the UI
+                // can show the offline state with a reconnect button
+                let apiClient = APIClient(
+                    baseURL: server.baseURL,
+                    username: server.username,
+                    password: password
+                )
+                let eventService = EventService()
+                let serverID = server.id
+                eventService.onEvent = { [weak self] (event: SSEEvent) in
+                    self?.routeEvent(event, serverID: serverID)
+                }
+                eventService.connectionState = .offline
+                connections[serverID] = ActiveConnection(
+                    server: server,
+                    apiClient: apiClient,
+                    eventService: eventService
+                )
+            }
             // connect() sets activeServerID only if nil — force set it here
             activeServerID = server.id
         }
@@ -259,6 +281,36 @@ final class ConnectionManager {
     func connectionState(for serverID: UUID) -> ConnectionState {
         guard let connection = connections[serverID] else { return .idle }
         return connection.eventService.connectionState
+    }
+
+    /// Manually retry connecting to a server that went offline.
+    ///
+    /// Performs a health check first. If healthy, restarts SSE listening.
+    /// If the health check fails, sets the connection state back to `.offline`.
+    ///
+    /// - Parameter serverID: The UUID of the server to retry.
+    func retryConnection(for serverID: UUID) async {
+        guard let connection = connections[serverID] else { return }
+
+        connection.eventService.connectionState = .connecting
+
+        let healthy: Bool
+        do {
+            healthy = try await connection.apiClient.healthCheck()
+        } catch {
+            connection.eventService.connectionState = .offline
+            return
+        }
+
+        guard healthy else {
+            connection.eventService.connectionState = .offline
+            return
+        }
+
+        connection.eventService.startListening(
+            apiClient: connection.apiClient,
+            directoryFilter: activeEventDirectory
+        )
     }
 
     // MARK: - Scene Phase

@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		B01761B22F5981A600911C23 /* Launch Screen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = B01761B12F5981A600911C23 /* Launch Screen.storyboard */; };
+		B01761B42F59839100911C23 /* opencody.png in Resources */ = {isa = PBXBuildFile; fileRef = B01761B32F59839100911C23 /* opencody.png */; };
 		B05C611F2F51BF550058D14E /* MarkdownUI in Frameworks */ = {isa = PBXBuildFile; productRef = B05C611E2F51BF550058D14E /* MarkdownUI */; };
 		B05C61FA2F55D7840058D14E /* LDSwiftEventSource in Frameworks */ = {isa = PBXBuildFile; productRef = B05C61F92F55D7840058D14E /* LDSwiftEventSource */; };
 		B05C62062F56F8580058D14E /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = B05C62052F56F8580058D14E /* AppIcon.icon */; };
@@ -31,6 +33,8 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		B01761B12F5981A600911C23 /* Launch Screen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = "Launch Screen.storyboard"; sourceTree = "<group>"; };
+		B01761B32F59839100911C23 /* opencody.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = opencody.png; sourceTree = "<group>"; };
 		B05C62052F56F8580058D14E /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = AppIcon.icon; sourceTree = "<group>"; };
 		B0CD5F092F4DFB2700E79BBB /* OpenCody - An OpenCode Client.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "OpenCody - An OpenCode Client.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		B0CD5F182F4DFB2900E79BBB /* OpenCody - An OpenCode ClientTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "OpenCody - An OpenCode ClientTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -86,6 +90,8 @@
 		B0CD5F002F4DFB2700E79BBB = {
 			isa = PBXGroup;
 			children = (
+				B01761B12F5981A600911C23 /* Launch Screen.storyboard */,
+				B01761B32F59839100911C23 /* opencody.png */,
 				B05C62052F56F8580058D14E /* AppIcon.icon */,
 				B0CD5F0B2F4DFB2700E79BBB /* OpenCody - An OpenCode Client */,
 				B0CD5F1B2F4DFB2900E79BBB /* OpenCody - An OpenCode ClientTests */,
@@ -233,6 +239,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				B05C62062F56F8580058D14E /* AppIcon.icon in Resources */,
+				B01761B42F59839100911C23 /* opencody.png in Resources */,
+				B01761B22F5981A600911C23 /* Launch Screen.storyboard in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -426,6 +434,7 @@
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UIStatusBarStyle = UIStatusBarStyleDarkContent;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -460,6 +469,7 @@
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UIStatusBarStyle = UIStatusBarStyleDarkContent;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				LD_RUNPATH_SEARCH_PATHS = (

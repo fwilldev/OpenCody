@@ -21,12 +21,24 @@ struct ProjectSessionsView: View {
 
     @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var showCreateSheet: Bool = false
+    @State private var createdSession: Session?
     @State private var projectSessions: [Session] = []
     @State private var localStatusMap: [String: SessionStatus] = [:]
     @State private var isLoading = true
     @State private var loadError: String? = nil
     @State private var eventToken: UUID? = nil
     @State private var refreshToken: UUID? = nil
+    @State private var displayLimit: Int = 5
+    @State private var hasMore: Bool = false
+    @State private var showArchived: Bool = false
+
+    /// Sessions filtered by archive status.
+    private var visibleSessions: [Session] {
+        if showArchived {
+            return projectSessions
+        }
+        return projectSessions.filter { $0.time.archived == nil }
+    }
 
     // MARK: - Body
 
@@ -39,16 +51,18 @@ struct ProjectSessionsView: View {
                 ProgressView("Loading sessions…")
                     .tint(Theme.Colors.cyberBlue)
                     .foregroundStyle(Theme.Colors.silver)
-            } else if projectSessions.isEmpty {
+            } else if visibleSessions.isEmpty {
                 EmptyStateView(
                     systemImage: "rectangle.stack",
                     title: "No Sessions",
-                    message: "This project has no sessions yet."
+                    message: showArchived
+                        ? "This project has no sessions yet."
+                        : "No active sessions. Tap the archive filter to see archived ones."
                 )
             } else {
                 ScrollView {
                     LazyVStack(spacing: Theme.Spacing.sm) {
-                        ForEach(projectSessions) { session in
+                        ForEach(visibleSessions) { session in
                             NavigationLink(destination: chatDestination(for: session)) {
                                 SessionCardView(
                                     session: session,
@@ -57,6 +71,32 @@ struct ProjectSessionsView: View {
                             }
                             .buttonStyle(.plain)
                             .contextMenu {
+                                if session.time.archived != nil {
+                                    Button {
+                                        Task {
+                                            try? await viewModel.unarchiveSession(id: session.id)
+                                            if let idx = projectSessions.firstIndex(where: { $0.id == session.id }),
+                                               let updated = viewModel.sessions.first(where: { $0.id == session.id }) {
+                                                projectSessions[idx] = updated
+                                            }
+                                        }
+                                    } label: {
+                                        Label("Unarchive", systemImage: "tray.and.arrow.up")
+                                    }
+                                } else {
+                                    Button {
+                                        Task {
+                                            try? await viewModel.archiveSession(id: session.id)
+                                            if let idx = projectSessions.firstIndex(where: { $0.id == session.id }),
+                                               let updated = viewModel.sessions.first(where: { $0.id == session.id }) {
+                                                projectSessions[idx] = updated
+                                            }
+                                        }
+                                    } label: {
+                                        Label("Archive", systemImage: "archivebox")
+                                    }
+                                }
+
                                 Button(role: .destructive) {
                                     Task {
                                         try? await viewModel.deleteSession(id: session.id)
@@ -67,6 +107,34 @@ struct ProjectSessionsView: View {
                                 }
                             }
                         }
+
+                        // Show More button
+                        if hasMore {
+                            Button {
+                                Task {
+                                    await loadMoreSessions()
+                                }
+                            } label: {
+                                HStack(spacing: Theme.Spacing.xs) {
+                                    Text("Show More")
+                                        .font(Theme.Fonts.bodyBold)
+                                    Image(systemName: "chevron.down")
+                                        .font(.system(size: 12, weight: .semibold))
+                                }
+                                .foregroundStyle(Theme.Colors.cyberBlue)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, Theme.Spacing.sm)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 12)
+                                        .fill(Theme.Colors.cyberBlue.opacity(0.1))
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 12)
+                                                .stroke(Theme.Colors.cyberBlue.opacity(0.3), lineWidth: 1)
+                                        )
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
                     .padding(.horizontal, Theme.Spacing.md)
                     .padding(.vertical, Theme.Spacing.sm)
@@ -76,16 +144,26 @@ struct ProjectSessionsView: View {
         .navigationTitle(projectName)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    showCreateSheet = true
-                } label: {
-                    Image(systemName: "plus")
-                        .foregroundStyle(Theme.Colors.cyberBlue)
+                HStack(spacing: Theme.Spacing.sm) {
+                    Button {
+                        showArchived.toggle()
+                    } label: {
+                        Image(systemName: showArchived ? "archivebox.fill" : "archivebox")
+                            .foregroundStyle(showArchived ? Theme.Colors.hotPink : Theme.Colors.silver)
+                    }
+
+                    Button {
+                        showCreateSheet = true
+                    } label: {
+                        Image(systemName: "plus")
+                            .foregroundStyle(Theme.Colors.cyberBlue)
+                    }
                 }
             }
 
             ToolbarItem(placement: .primaryAction) {
                 RefreshButton {
+                    displayLimit = 5
                     await loadProjectSessions()
                     await loadStatuses()
                 }
@@ -95,9 +173,15 @@ struct ProjectSessionsView: View {
             CreateSessionSheet(
                 viewModel: viewModel,
                 connectionManager: connectionManager,
-                preselectedPath: projectPath
+                preselectedPath: projectPath,
+                onSessionCreated: { session in
+                    createdSession = session
+                }
             )
             .presentationDetents([.large])
+        }
+        .navigationDestination(item: $createdSession) { session in
+            chatDestination(for: session)
         }
         .task(id: projectPath) {
             stopObservingEvents()
@@ -105,6 +189,8 @@ struct ProjectSessionsView: View {
             projectSessions = []
             isLoading = true
             loadError = nil
+            displayLimit = 5
+            hasMore = false
             await loadProjectSessions()
             await loadStatuses()
             startObservingEvents()
@@ -130,8 +216,11 @@ struct ProjectSessionsView: View {
 
         do {
             let api = SessionAPI(client: client)
-            let fetched = try await api.list(directory: directory, roots: true, limit: 55)
-            projectSessions = fetched.sorted { $0.time.updated > $1.time.updated }
+            // Fetch one extra to detect if there are more sessions beyond the display limit.
+            let fetched = try await api.list(directory: directory, roots: true, limit: displayLimit + 1)
+            hasMore = fetched.count > displayLimit
+            let limited = hasMore ? Array(fetched.prefix(displayLimit)) : fetched
+            projectSessions = limited.sorted { $0.time.updated > $1.time.updated }
         } catch is CancellationError {
             return
         } catch let urlError as URLError where urlError.code == .cancelled {
@@ -141,6 +230,12 @@ struct ProjectSessionsView: View {
         }
 
         isLoading = false
+    }
+
+    /// Load more sessions by increasing the display limit.
+    private func loadMoreSessions() async {
+        displayLimit += 5
+        await loadProjectSessions()
     }
 
     private func loadStatuses() async {

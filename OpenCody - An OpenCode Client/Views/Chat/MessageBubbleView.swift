@@ -36,8 +36,19 @@ struct MessageBubbleView: View {
         }
     }
 
-    /// Extracts all copyable text content from message parts.
-    private var copyableText: String {
+    /// Indicates if there is any copyable text content.
+    private var hasCopyableText: Bool {
+        messageWithParts.parts.contains { part in
+            switch part {
+            case .text(let p): return !p.text.isEmpty
+            case .reasoning(let p): return !p.text.isEmpty
+            default: return false
+            }
+        }
+    }
+
+    /// Build copyable text content on demand (avoid heavy work in body).
+    private func buildCopyableText() -> String {
         messageWithParts.parts.compactMap { part in
             switch part {
             case .text(let p): return p.text
@@ -114,9 +125,9 @@ struct MessageBubbleView: View {
         )
         .opacity(isLocalPending ? 0.7 : 1.0)
         .contextMenu {
-            if !copyableText.isEmpty {
+            if hasCopyableText {
                 Button {
-                    UIPasteboard.general.string = copyableText
+                    UIPasteboard.general.string = buildCopyableText()
                 } label: {
                     Label("Copy", systemImage: "doc.on.doc")
                 }

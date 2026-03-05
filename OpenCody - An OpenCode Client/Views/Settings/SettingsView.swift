@@ -12,6 +12,7 @@ struct SettingsView: View {
     let connectionManager: ConnectionManager
 
     @EnvironmentObject private var serverStore: ServerStoreModel
+    @Bindable private var notificationSettings = NotificationSettings.shared
 
     var body: some View {
         ZStack {
@@ -69,22 +70,45 @@ struct SettingsView: View {
                         }
                     }
 
-                    // MARK: - Server
-                    SettingsSection(title: "Server") {
-                        NavigationLink {
-                            if let apiClient = connectionManager.activeAPIClient {
-                                ServerConfigView(apiClient: apiClient)
-                            } else {
-                                noConnectionView(for: "Server Config")
-                            }
-                        } label: {
-                            SettingsRow(
-                                icon: "gearshape.2",
-                                iconColor: Theme.Colors.neonOrange,
-                                title: "Server Config",
-                                detail: "Models, agents, behaviour"
-                            )
-                        }
+                    // MARK: - Notifications
+                    SettingsSection(title: "Notifications") {
+                        SettingsToggleRow(
+                            icon: "checkmark.circle",
+                            iconColor: Theme.Colors.neonGreen,
+                            title: "Turn Complete",
+                            detail: "When a session finishes",
+                            isOn: $notificationSettings.turnCompleteEnabled
+                        )
+
+                        SettingsDivider()
+
+                        SettingsToggleRow(
+                            icon: "exclamationmark.triangle",
+                            iconColor: Theme.Colors.neonOrange,
+                            title: "Errors",
+                            detail: "Session error alerts",
+                            isOn: $notificationSettings.errorsEnabled
+                        )
+
+                        SettingsDivider()
+
+                        SettingsToggleRow(
+                            icon: "lock.shield",
+                            iconColor: Theme.Colors.electricPurple,
+                            title: "Permissions",
+                            detail: "Tool approval requests",
+                            isOn: $notificationSettings.permissionsEnabled
+                        )
+
+                        SettingsDivider()
+
+                        SettingsToggleRow(
+                            icon: "questionmark.bubble",
+                            iconColor: Theme.Colors.cyberBlue,
+                            title: "Questions",
+                            detail: "Agent questions",
+                            isOn: $notificationSettings.questionsEnabled
+                        )
                     }
 
                     // MARK: - About
@@ -124,17 +148,6 @@ struct SettingsView: View {
 
                         SettingsDivider()
 
-                        Link(destination: URL(string: "https://willsoftwaresolutions.de/impressum")!) {
-                            SettingsRow(
-                                icon: "building.2",
-                                iconColor: Theme.Colors.neonOrange,
-                                title: "Will Software Solutions",
-                                detail: "Impressum"
-                            )
-                        }
-
-                        SettingsDivider()
-
                         NavigationLink {
                             PrivacyPolicyView()
                         } label: {
@@ -156,15 +169,19 @@ struct SettingsView: View {
                                 detail: nil
                             )
                         }
+
+                        SettingsDivider()
+
+                        Link(destination: URL(string: "https://willsoftwaresolutions.de")!) {
+                            SettingsRow(
+                                icon: "building.2",
+                                iconColor: Theme.Colors.neonOrange,
+                                title: "About the Developer",
+                                detail: "Will Software Solutions"
+                            )
+                        }
                     }
 
-                    // MARK: - Copyright
-                    Text("© 2026 Will Software Solutions. All rights reserved.")
-                        .font(Theme.Fonts.caption)
-                        .foregroundStyle(Theme.Colors.smoke)
-                        .frame(maxWidth: .infinity)
-                        .multilineTextAlignment(.center)
-                        .padding(.top, Theme.Spacing.sm)
                 }
                 .padding(.top, Theme.Spacing.sm)
                 .padding(.bottom, Theme.Spacing.xxl)
@@ -172,11 +189,6 @@ struct SettingsView: View {
         }
         .navigationTitle("Settings")
         .navigationBarTitleDisplayMode(.large)
-        .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
-                connectionStatusBadge
-            }
-        }
     }
 
     // MARK: - Helpers
@@ -189,15 +201,6 @@ struct SettingsView: View {
 
     private var appVersion: String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
-    }
-
-    @ViewBuilder
-    private var connectionStatusBadge: some View {
-        if connectionManager.activeAPIClient != nil {
-            StatusBadge(status: .active)
-        } else {
-            StatusBadge(status: .idle)
-        }
     }
 
     @ViewBuilder
@@ -299,6 +302,51 @@ private struct SettingsRow: View {
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(Theme.Colors.smoke)
             }
+        }
+        .padding(.vertical, 4)
+        .contentShape(Rectangle())
+    }
+}
+
+// MARK: - SettingsToggleRow
+
+/// Toggle row matching the visual style of SettingsRow — icon, title, detail, toggle.
+private struct SettingsToggleRow: View {
+    let icon: String
+    let iconColor: Color
+    let title: String
+    let detail: String?
+    @Binding var isOn: Bool
+
+    var body: some View {
+        HStack(spacing: Theme.Spacing.md) {
+            // Icon container
+            ZStack {
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(iconColor.opacity(0.12))
+                    .frame(width: 40, height: 40)
+                Image(systemName: icon)
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(iconColor)
+            }
+
+            // Text content
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(Theme.Fonts.body)
+                    .foregroundStyle(Theme.Colors.cloud)
+                if let detail {
+                    Text(detail)
+                        .font(Theme.Fonts.caption)
+                        .foregroundStyle(Theme.Colors.silver)
+                }
+            }
+
+            Spacer()
+
+            Toggle("", isOn: $isOn)
+                .labelsHidden()
+                .tint(Theme.Colors.cyberBlue)
         }
         .padding(.vertical, 4)
         .contentShape(Rectangle())

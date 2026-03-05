@@ -19,6 +19,12 @@ struct iPadRootView: View {
     @State private var detailPath = NavigationPath()
     @State private var showSettings: Bool = false
 
+    /// Whether the active server's connection is in the offline state.
+    private var isActiveServerOffline: Bool {
+        guard let id = connectionManager.activeServerID else { return false }
+        return connectionManager.connectionState(for: id) == .offline
+    }
+
     /// Shared DashboardViewModel for sidebar + detail.
     @State private var dashboardViewModel: DashboardViewModel
 
@@ -56,7 +62,17 @@ struct iPadRootView: View {
         .sheet(isPresented: $showCreateSheet) {
             CreateSessionSheet(
                 viewModel: dashboardViewModel,
-                connectionManager: connectionManager
+                connectionManager: connectionManager,
+                onSessionCreated: { session in
+                    // Select the project containing the new session so its session list is shown
+                    let components = session.directory
+                        .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+                        .split(separator: "/")
+                    let projectKey = components.last.map(String.init) ?? session.directory
+                    selectedProjectKey = projectKey
+                    showSettings = false
+                    detailPath = NavigationPath()
+                }
             )
         }
         .sheet(isPresented: $showAddServer) {
@@ -75,6 +91,16 @@ struct iPadRootView: View {
             Task {
                 await dashboardViewModel.loadSessions()
                 await dashboardViewModel.loadStatuses()
+            }
+        }
+        .onChange(of: isActiveServerOffline) { wasOffline, isOffline in
+            // When transitioning from offline → online, reload data
+            if wasOffline && !isOffline {
+                Task {
+                    await dashboardViewModel.loadSessions()
+                    await dashboardViewModel.loadStatuses()
+                    dashboardViewModel.startObservingEvents()
+                }
             }
         }
         .onDisappear {
@@ -132,7 +158,20 @@ struct iPadRootView: View {
 
     private var settingsOrEmptyContent: some View {
         Group {
-            if connectionManager.activeAPIClient == nil && serverStore.servers.isEmpty {
+            if isActiveServerOffline {
+                EmptyStateView(
+                    systemImage: "wifi.slash",
+                    title: "Server Offline",
+                    message: "The server could not be reached after multiple attempts. Tap to try again.",
+                    action: {
+                        guard let id = connectionManager.activeServerID else { return }
+                        Task {
+                            await connectionManager.retryConnection(for: id)
+                        }
+                    },
+                    actionLabel: "Reconnect"
+                )
+            } else if connectionManager.activeAPIClient == nil && serverStore.servers.isEmpty {
                 EmptyStateView(
                     systemImage: "server.rack",
                     title: "No Server Connected",

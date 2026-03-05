@@ -69,8 +69,7 @@ struct ProvidersView: View {
                         NavigationLink {
                             ProviderDetailView(
                                 provider: provider,
-                                isConnected: connected.contains(provider.id),
-                                apiClient: apiClient
+                                isConnected: connected.contains(provider.id)
                             )
                         } label: {
                             ProviderRowView(

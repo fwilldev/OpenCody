@@ -28,6 +28,7 @@ struct ChatInputView: View {
     private var canSend: Bool {
         (!text.trimmingCharacters(in: .whitespaces).isEmpty || !attachmentManager.attachments.isEmpty)
             && !viewModel.isGenerating
+            && !viewModel.isBlockedByQuestion
     }
 
     /// The portion of the text after the leading "/" for palette filtering.

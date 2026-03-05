@@ -63,8 +63,21 @@ final class ChatViewModel {
     var pendingPermission: Permission? = nil
     var pendingQuestionRequestIDs: Set<String> = []
     var error: String? = nil
+
+    /// The first pending question request for the session, if any.
+    /// Drives the `SessionQuestionDock` overlay.
+    var activeQuestionRequest: QuestionRequest? {
+        guard let firstID = pendingQuestionRequestIDs.first else { return nil }
+        return questionRequestsByID[firstID]
+    }
+
+    /// Whether the session is blocked waiting for question input.
+    var isBlockedByQuestion: Bool {
+        !pendingQuestionRequestIDs.isEmpty
+    }
     var isLoadingMore: Bool = false
     var hasMoreMessages: Bool = true
+    var visibleMessageCount: Int = 0
     var selectedAgentID: String? = nil
     var selectedModelID: String? = nil
     var selectedProviderID: String? = nil
@@ -72,30 +85,22 @@ final class ChatViewModel {
     /// Messages filtered for display: removes "step-only" messages (those containing
     /// exclusively step-start / step-finish parts with no real content).
     var displayMessages: [MessageWithParts] {
-        messages.filter { mwp in
-            // User messages always shown
-            if mwp.message.role == .user { return true }
-            // Empty parts → show (placeholder "…")
-            if mwp.parts.isEmpty { return true }
-            // Keep if at least one part is NOT step-start/step-finish
-            return mwp.parts.contains { part in
-                switch part {
-                case .stepStart, .stepFinish: return false
-                default: return true
-                }
-            }
-        }
+        let filtered = filteredMessagesCache
+        guard visibleMessageCount > 0 else { return filtered }
+        let count = min(filtered.count, visibleMessageCount)
+        return Array(filtered.suffix(count))
     }
 
     /// Count of messages hidden by displayMessages filter (step-only messages).
     var hiddenStepMessageCount: Int {
-        messages.count - displayMessages.count
+        messages.count - filteredMessagesCache.count
     }
 
     // MARK: - Private
 
     @ObservationIgnored private let connectionManager: ConnectionManager
     @ObservationIgnored private var loadedMessageIDs: Set<String> = []
+    @ObservationIgnored private var filteredMessagesCache: [MessageWithParts] = []
     /// Buffer for parts that arrived before their message via SSE.
     @ObservationIgnored private var pendingParts: [String: [Part]] = [:]
     /// Buffer for deltas that arrived before their part via SSE.
@@ -110,6 +115,8 @@ final class ChatViewModel {
     @ObservationIgnored private var lastSSEEventAt: Date?
     /// Fallback polling task when SSE isn't delivering events.
     @ObservationIgnored private var pollTask: Task<Void, Never>?
+    @ObservationIgnored private let initialMessageBatch = 60
+    @ObservationIgnored private let loadMoreBatch = 40
 
     // MARK: - Init
 
@@ -129,14 +136,15 @@ final class ChatViewModel {
         }
 
         error = nil
+        let wasFullyLoaded = !hasMoreMessages && visibleMessageCount > 0
 
         do {
             let api = MessageAPI(client: client)
             let responses = try await api.list(sessionID: session.id)
             messages = responses.map { $0.toModel() }
             loadedMessageIDs = Set(messages.map(\.id))
-            // API returns all messages at once — no server-side pagination
-            hasMoreMessages = false
+            refreshFilteredMessages()
+            updatePaginationState(wasFullyLoaded: wasFullyLoaded)
             await refreshPendingQuestions(client: client)
             restoreAgentModelFromMessages()
             // Load server-side defaults (agent + model) when none were set from message history.
@@ -173,8 +181,12 @@ final class ChatViewModel {
     /// Kept for future pagination support.
     func loadMore() async {
         guard hasMoreMessages, !isLoadingMore else { return }
-        // No server-side pagination — all messages loaded in loadMessages()
-        hasMoreMessages = false
+        isLoadingMore = true
+        let total = filteredMessagesCache.count
+        let target = min(total, visibleMessageCount + loadMoreBatch)
+        visibleMessageCount = target
+        hasMoreMessages = total > visibleMessageCount
+        isLoadingMore = false
     }
 
     /// Send a text prompt to the session. The actual response arrives via SSE events.
@@ -442,6 +454,7 @@ final class ChatViewModel {
             guard payload.sessionID == session.id else { return }
             messages.removeAll { $0.id == payload.messageID }
             loadedMessageIDs.remove(payload.messageID)
+            refreshFilteredMessages()
 
         case .messagePartUpdated(let payload):
             let part = payload.part
@@ -462,6 +475,7 @@ final class ChatViewModel {
             guard payload.sessionID == session.id else { return }
             if let msgIdx = messages.firstIndex(where: { $0.id == payload.messageID }) {
                 messages[msgIdx].parts.removeAll { $0.id == payload.partID }
+                refreshFilteredMessages()
             }
 
         case .permissionUpdated(let permission):
@@ -633,6 +647,8 @@ final class ChatViewModel {
                     messages = updated
                     loadedMessageIDs = Set(updated.map(\.id))
                     pendingLocalUserMessageIDs.removeAll()
+                    refreshFilteredMessages()
+                    updatePaginationState(wasFullyLoaded: false)
                 }
 
                 await refreshPendingQuestions(api: questionAPI)
@@ -753,6 +769,7 @@ final class ChatViewModel {
 
     /// Upsert a message into the messages array. Updates existing or appends new.
     private func upsertMessage(_ message: Message) {
+        let wasFullyLoaded = !hasMoreMessages && visibleMessageCount > 0
         if let idx = messages.firstIndex(where: { $0.id == message.id }) {
             messages[idx] = MessageWithParts(message: message, parts: messages[idx].parts)
         } else {
@@ -764,10 +781,13 @@ final class ChatViewModel {
             }
             loadedMessageIDs.insert(message.id)
         }
+        refreshFilteredMessages()
+        updatePaginationState(wasFullyLoaded: wasFullyLoaded)
     }
 
     /// Add a local optimistic user message so the chat feels instant.
     private func appendLocalUserMessage(text: String, attachments: [PromptAttachment]) {
+        let wasFullyLoaded = !hasMoreMessages && visibleMessageCount > 0
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         let displayText: String
         if trimmed.isEmpty, !attachments.isEmpty {
@@ -816,6 +836,8 @@ final class ChatViewModel {
 
         messages.append(MessageWithParts(message: .user(userMessage), parts: [.text(part)]))
         pendingLocalUserMessageIDs.insert(tempMessageID)
+        refreshFilteredMessages()
+        updatePaginationState(wasFullyLoaded: wasFullyLoaded)
     }
 
     /// Upsert a part into the matching message's parts array.
@@ -831,7 +853,36 @@ final class ChatViewModel {
         } else {
             messages[msgIdx].parts.append(part)
         }
+        refreshFilteredMessages()
         drainPendingDeltas(forPartID: part.id)
+    }
+
+    private func refreshFilteredMessages() {
+        filteredMessagesCache = messages.filter { mwp in
+            // User messages always shown
+            if mwp.message.role == .user { return true }
+            // Empty parts → show (placeholder "…")
+            if mwp.parts.isEmpty { return true }
+            // Keep if at least one part is NOT step-start/step-finish
+            return mwp.parts.contains { part in
+                switch part {
+                case .stepStart, .stepFinish: return false
+                default: return true
+                }
+            }
+        }
+    }
+
+    private func updatePaginationState(wasFullyLoaded: Bool) {
+        let total = filteredMessagesCache.count
+        if visibleMessageCount == 0 {
+            visibleMessageCount = min(total, initialMessageBatch)
+        } else if wasFullyLoaded {
+            visibleMessageCount = total
+        } else if visibleMessageCount > total {
+            visibleMessageCount = total
+        }
+        hasMoreMessages = total > visibleMessageCount
     }
 
     /// Apply a streaming text delta to an existing part.
@@ -865,6 +916,7 @@ final class ChatViewModel {
                 metadata: tp.metadata
             )
             messages[msgIdx].parts[partIdx] = .text(updated)
+            refreshFilteredMessages()
 
         case .reasoning(let rp):
             guard delta.field.isEmpty || delta.field == "text" || delta.field == "reasoning" || delta.field == "content" else { break }
@@ -880,6 +932,7 @@ final class ChatViewModel {
                 time: rp.time
             )
             messages[msgIdx].parts[partIdx] = .reasoning(updated)
+            refreshFilteredMessages()
 
         default:
             // Other part types don't have streaming text deltas

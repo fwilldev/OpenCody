@@ -3,6 +3,18 @@ import MarkdownUI
 
 struct TextPartView: View {
     let part: TextPart
+    @State private var showFullText = false
+
+    private let previewLimit = 8000
+    private var isTruncated: Bool {
+        part.text.count > previewLimit
+    }
+    private var displayText: String {
+        if showFullText || !isTruncated {
+            return part.text
+        }
+        return String(part.text.prefix(previewLimit)) + "…"
+    }
 
     private static let markdownTheme: MarkdownUI.Theme = MarkdownUI.Theme()
         .code {
@@ -30,12 +42,28 @@ struct TextPartView: View {
         if part.text.isEmpty {
             EmptyView()
         } else {
-            Markdown(part.text)
-                .markdownTheme(Self.markdownTheme)
-                .markdownTextStyle {
-                    ForegroundColor(Theme.Colors.cloud)
-                    FontSize(15)
+            VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                if showFullText || !isTruncated {
+                    Markdown(displayText)
+                        .markdownTheme(Self.markdownTheme)
+                        .markdownTextStyle {
+                            ForegroundColor(Theme.Colors.cloud)
+                            FontSize(15)
+                        }
+                } else {
+                    Text(displayText)
+                        .font(.system(size: 15))
+                        .foregroundStyle(Theme.Colors.cloud)
                 }
+
+                if isTruncated && !showFullText {
+                    Button("Show full response") {
+                        showFullText = true
+                    }
+                    .font(.caption)
+                    .foregroundStyle(Theme.Colors.cyberBlue)
+                }
+            }
                 #if DEBUG
                 .onAppear {
                     print("[TextPartView] rendering text (\(part.text.count) chars): \(part.text.prefix(200))")

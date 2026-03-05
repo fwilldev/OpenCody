@@ -15,6 +15,7 @@ struct DashboardView: View {
     @State private var viewModel: DashboardViewModel
     @State private var showCreateSheet: Bool = false
     @State private var showAddServer: Bool = false
+    @State private var createdSession: Session?
     @EnvironmentObject private var serverStore: ServerStoreModel
 
     // MARK: - Init
@@ -26,18 +27,34 @@ struct DashboardView: View {
 
     // MARK: - Computed
 
+    /// Whether the active server's connection is in the offline state.
+    private var isActiveServerOffline: Bool {
+        guard let id = connectionManager.activeServerID else { return false }
+        return connectionManager.connectionState(for: id) == .offline
+    }
+
     /// Sessions grouped by the last component of their directory path (i.e. project folder name).
-    private var sessionsByProject: [(key: String, sessions: [Session])] {
-        let grouped = Dictionary(grouping: viewModel.sessions) { session -> String in
+    private var sessionsByProject: [(key: String, sessions: [Session], directory: String)] {
+        let grouped = Dictionary(grouping: viewModel.activeSessions) { session -> String in
             // Use the last path component as the project name; fall back to full path
             let components = session.directory
                 .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
                 .split(separator: "/")
             return components.last.map(String.init) ?? session.directory
         }
+        let closed = viewModel.closedDirectories
         return grouped
             .sorted { $0.key.lowercased() < $1.key.lowercased() }
-            .map { (key: $0.key, sessions: $0.value.sorted { $0.time.updated > $1.time.updated }) }
+            .map { (key: $0.key, sessions: $0.value.sorted { $0.time.updated > $1.time.updated }, directory: $0.value.first?.directory ?? "") }
+            .filter { group in
+                if viewModel.showClosedProjects { return true }
+                return !closed.contains(group.directory)
+            }
+    }
+
+    /// Whether there are any closed projects to potentially show.
+    private var hasClosedProjects: Bool {
+        !viewModel.closedDirectories.isEmpty
     }
 
     // MARK: - Body
@@ -60,12 +77,14 @@ struct DashboardView: View {
                 }
 
                 // Content
-                if connectionManager.activeAPIClient == nil && !serverStore.servers.isEmpty {
+                if isActiveServerOffline {
+                    offlineState
+                } else if connectionManager.activeAPIClient == nil && !serverStore.servers.isEmpty {
                     // Server is connecting — show skeleton while we wait
                     loadingSkeleton
-                } else if viewModel.isLoading && viewModel.sessions.isEmpty {
+                } else if viewModel.isLoading && viewModel.activeSessions.isEmpty {
                     loadingSkeleton
-                } else if viewModel.sessions.isEmpty && !viewModel.isLoading {
+                } else if viewModel.activeSessions.isEmpty && !viewModel.isLoading {
                     emptyState
                 } else {
                     projectList
@@ -102,8 +121,14 @@ struct DashboardView: View {
         .sheet(isPresented: $showCreateSheet) {
             CreateSessionSheet(
                 viewModel: viewModel,
-                connectionManager: connectionManager
+                connectionManager: connectionManager,
+                onSessionCreated: { session in
+                    createdSession = session
+                }
             )
+        }
+        .navigationDestination(item: $createdSession) { session in
+            ChatView(session: session, connectionManager: connectionManager)
         }
         .sheet(isPresented: $showAddServer) {
             NavigationStack {
@@ -112,9 +137,19 @@ struct DashboardView: View {
             }
         }
         .task(id: connectionManager.activeServerID) {
+            viewModel.loadClosedProjects()
             await viewModel.loadSessions()
             await viewModel.loadStatuses()
             viewModel.startObservingEvents()
+        }
+        .onChange(of: isActiveServerOffline) { wasOffline, isOffline in
+            // When transitioning from offline → online, reload data
+            if wasOffline && !isOffline {
+                Task {
+                    await viewModel.loadSessions()
+                    await viewModel.loadStatuses()
+                }
+            }
         }
         .onDisappear {
             viewModel.stopObservingEvents()
@@ -135,6 +170,22 @@ struct DashboardView: View {
             .padding(.vertical, Theme.Spacing.sm)
         }
         .allowsHitTesting(false)
+    }
+
+    /// Offline state — shown when the server connection has been marked offline after max retries.
+    private var offlineState: some View {
+        EmptyStateView(
+            systemImage: "wifi.slash",
+            title: "Server Offline",
+            message: "The server could not be reached after multiple attempts. Tap to try again.",
+            action: {
+                guard let id = connectionManager.activeServerID else { return }
+                Task {
+                    await connectionManager.retryConnection(for: id)
+                }
+            },
+            actionLabel: "Reconnect"
+        )
     }
 
     /// Empty state when no sessions or no server connected.
@@ -165,6 +216,8 @@ struct DashboardView: View {
         ScrollView {
             LazyVStack(spacing: Theme.Spacing.sm) {
                 ForEach(sessionsByProject, id: \.key) { group in
+                    let isClosed = viewModel.isProjectClosed(directory: group.directory)
+
                     NavigationLink(destination: ProjectSessionsView(
                         projectName: group.key,
                         projectPath: group.sessions.first?.directory,
@@ -177,6 +230,43 @@ struct DashboardView: View {
                             activeSessions: group.sessions.filter { isBusy(viewModel.statusMap[$0.id]) }.count,
                             lastUpdated: group.sessions.first?.time.updated ?? 0
                         )
+                        .opacity(isClosed ? 0.5 : 1.0)
+                    }
+                    .buttonStyle(.plain)
+                    .contextMenu {
+                        if isClosed {
+                            Button {
+                                withAnimation { viewModel.reopenProject(directory: group.directory) }
+                            } label: {
+                                Label("Reopen Project", systemImage: "eye")
+                            }
+                        } else {
+                            Button {
+                                withAnimation { viewModel.closeProject(directory: group.directory) }
+                            } label: {
+                                Label("Close Project", systemImage: "eye.slash")
+                            }
+                        }
+                    }
+                }
+
+                // Show/hide closed projects toggle
+                if hasClosedProjects {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            viewModel.showClosedProjects.toggle()
+                        }
+                    } label: {
+                        HStack(spacing: Theme.Spacing.sm) {
+                            Image(systemName: viewModel.showClosedProjects ? "eye.slash" : "eye")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(Theme.Colors.smoke)
+                            Text(viewModel.showClosedProjects ? "Hide Closed Projects" : "Show Closed Projects")
+                                .font(Theme.Fonts.caption)
+                                .foregroundStyle(Theme.Colors.smoke)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, Theme.Spacing.sm)
                     }
                     .buttonStyle(.plain)
                 }
@@ -187,21 +277,6 @@ struct DashboardView: View {
     }
 
     // MARK: - Helpers
-
-    private func connectionStatusFrom(_ state: ConnectionState) -> ConnectionStatus {
-        switch state {
-        case .connected:
-            return .active
-        case .connecting:
-            return .connecting
-        case .reconnecting:
-            return .connecting
-        case .disconnected(let error):
-            return error != nil ? .error : .idle
-        case .idle:
-            return .idle
-        }
-    }
 
     /// Check if a session status is busy (SessionStatus doesn't conform to Equatable).
     private func isBusy(_ status: SessionStatus?) -> Bool {

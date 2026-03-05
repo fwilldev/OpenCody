@@ -19,15 +19,59 @@ final class DashboardViewModel {
     var isLoading: Bool = false
     var error: String? = nil
     var statusMap: [String: SessionStatus] = [:]
+    var showArchived: Bool = false
+    var showClosedProjects: Bool = false
 
     // MARK: - Dependencies
 
     @ObservationIgnored private let connectionManager: ConnectionManager
+    @ObservationIgnored private let closedProjectsStore = ClosedProjectsStore.shared
 
     // MARK: - Init
 
     init(connectionManager: ConnectionManager) {
         self.connectionManager = connectionManager
+    }
+
+    // MARK: - Closed Projects
+
+    /// Load closed-projects state for the active server.
+    func loadClosedProjects() {
+        guard let serverID = connectionManager.activeServerID else { return }
+        closedProjectsStore.load(for: serverID)
+    }
+
+    /// Whether a given directory is currently closed.
+    func isProjectClosed(directory: String) -> Bool {
+        closedProjectsStore.isClosed(directory: directory)
+    }
+
+    /// Close a project by hiding all sessions with the given directory.
+    func closeProject(directory: String) {
+        guard let serverID = connectionManager.activeServerID else { return }
+        closedProjectsStore.close(directory: directory, serverID: serverID)
+    }
+
+    /// Reopen a previously closed project.
+    func reopenProject(directory: String) {
+        guard let serverID = connectionManager.activeServerID else { return }
+        closedProjectsStore.reopen(directory: directory, serverID: serverID)
+    }
+
+    /// The set of currently closed directory paths (for filtering).
+    var closedDirectories: Set<String> {
+        closedProjectsStore.closedDirectories
+    }
+
+    // MARK: - Filtered Sessions
+
+    /// Sessions filtered by archive status.
+    /// When `showArchived` is false (default), archived sessions are hidden.
+    var activeSessions: [Session] {
+        if showArchived {
+            return sessions
+        }
+        return sessions.filter { $0.time.archived == nil }
     }
 
     // MARK: - Session Loading
@@ -37,6 +81,13 @@ final class DashboardViewModel {
         guard let client = connectionManager.activeAPIClient else {
             // No server connected — empty state handles this, no error needed
             sessions = []
+            return
+        }
+
+        // Don't attempt API calls when the server is offline — the offline UI
+        // handles this state; hitting the network would only produce repeated errors.
+        if let id = connectionManager.activeServerID,
+           connectionManager.connectionState(for: id) == .offline {
             return
         }
 
@@ -65,6 +116,12 @@ final class DashboardViewModel {
     func loadStatuses() async {
         guard let client = connectionManager.activeAPIClient else { return }
 
+        // Don't attempt API calls when the server is offline.
+        if let id = connectionManager.activeServerID,
+           connectionManager.connectionState(for: id) == .offline {
+            return
+        }
+
         do {
             let api = SessionAPI(client: client)
             statusMap = try await api.status()
@@ -78,12 +135,8 @@ final class DashboardViewModel {
     // MARK: - Session CRUD
 
     /// Create a new session in the project matching `path`.
-    func createSession(
-        path: String,
-        agentName: String?,
-        modelID: String?,
-        providerID: String?
-    ) async throws -> Session {
+    /// The default agent and model are applied automatically when the session chat is opened.
+    func createSession(path: String) async throws -> Session {
         guard let client = connectionManager.activeAPIClient else {
             throw OpenCodeError.connectionFailed("No active server connection")
         }
@@ -91,17 +144,13 @@ final class DashboardViewModel {
         let api = SessionAPI(client: client)
 
         let normalizedPath = normalizePath(path)
-        let session = try await api.create(directory: normalizedPath)
 
-        // Initialize the session with agent/model settings if provided
-        if agentName != nil || modelID != nil || providerID != nil {
-            _ = try? await api.initialize(
-                id: session.id,
-                agent: agentName,
-                modelID: modelID,
-                providerID: providerID
-            )
+        // Auto-reopen if the project was previously closed
+        if let serverID = connectionManager.activeServerID {
+            closedProjectsStore.reopenIfClosed(directory: normalizedPath, serverID: serverID)
         }
+
+        let session = try await api.create(directory: normalizedPath)
 
         // Insert the new session immediately instead of relying on loadSessions(),
         // which can be cancelled by SwiftUI task management and cause spurious errors.
@@ -122,6 +171,32 @@ final class DashboardViewModel {
         try await api.delete(id: id)
         sessions.removeAll { $0.id == id }
         statusMap.removeValue(forKey: id)
+    }
+
+    /// Archive a session.
+    func archiveSession(id: String) async throws {
+        guard let client = connectionManager.activeAPIClient else {
+            throw OpenCodeError.connectionFailed("No active server connection")
+        }
+
+        let api = SessionAPI(client: client)
+        let updated = try await api.update(id: id, setArchived: true)
+        if let index = sessions.firstIndex(where: { $0.id == id }) {
+            sessions[index] = updated
+        }
+    }
+
+    /// Unarchive a session.
+    func unarchiveSession(id: String) async throws {
+        guard let client = connectionManager.activeAPIClient else {
+            throw OpenCodeError.connectionFailed("No active server connection")
+        }
+
+        let api = SessionAPI(client: client)
+        let updated = try await api.update(id: id, setArchived: false)
+        if let index = sessions.firstIndex(where: { $0.id == id }) {
+            sessions[index] = updated
+        }
     }
 
     // MARK: - SSE Event Observation

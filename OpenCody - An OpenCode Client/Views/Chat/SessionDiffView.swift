@@ -200,7 +200,7 @@ private struct DiffContentView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        LazyVStack(alignment: .leading, spacing: 0) {
             ForEach(Array(diffLines.enumerated()), id: \.offset) { _, item in
                 Text(item.line)
                     .font(.system(size: 11, design: .monospaced))

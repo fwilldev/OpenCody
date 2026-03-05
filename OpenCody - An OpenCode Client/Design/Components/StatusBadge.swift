@@ -1,7 +1,7 @@
 import SwiftUI
 
 enum ConnectionStatus: Sendable {
-    case active, idle, error, connecting
+    case active, idle, error, connecting, offline
 
     var color: Color {
         switch self {
@@ -9,6 +9,7 @@ enum ConnectionStatus: Sendable {
         case .idle: return Theme.Colors.silver
         case .error: return Theme.Colors.hotPink
         case .connecting: return Theme.Colors.neonOrange
+        case .offline: return Theme.Colors.hotPink
         }
     }
 
@@ -18,6 +19,7 @@ enum ConnectionStatus: Sendable {
         case .idle: return "Idle"
         case .error: return "Error"
         case .connecting: return "Running"
+        case .offline: return "Offline"
         }
     }
 

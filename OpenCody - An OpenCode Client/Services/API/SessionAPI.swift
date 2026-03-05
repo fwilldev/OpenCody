@@ -57,6 +57,44 @@ struct SessionAPI: Sendable {
         let response: String
     }
 
+    private struct UpdateBody: Encodable {
+        let title: String?
+        let time: UpdateTimeBody?
+
+        struct UpdateTimeBody: Encodable {
+            /// Wrap in `ExplicitNull` to encode `nil` as JSON `null` (for unarchiving)
+            /// rather than omitting the key.
+            let archived: ExplicitNull<Double>?
+
+            func encode(to encoder: Encoder) throws {
+                var container = encoder.container(keyedBy: CodingKeys.self)
+                if let archived {
+                    try container.encode(archived, forKey: .archived)
+                }
+            }
+
+            enum CodingKeys: String, CodingKey {
+                case archived
+            }
+        }
+    }
+
+    /// Wrapper that encodes `nil` as JSON `null` instead of omitting the key.
+    private enum ExplicitNull<T: Encodable>: Encodable {
+        case value(T)
+        case null
+
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.singleValueContainer()
+            switch self {
+            case .value(let val):
+                try container.encode(val)
+            case .null:
+                try container.encodeNil()
+            }
+        }
+    }
+
     private struct ShellBody: Encodable {
         let command: String
         let agent: String
@@ -75,11 +113,13 @@ struct SessionAPI: Sendable {
     ///   - directory: Only return sessions for this project directory.
     ///   - roots: When `true`, return root sessions with aggregated summary data (default `true`).
     ///   - limit: Maximum number of sessions to return (default 100).
-    func list(directory: String? = nil, roots: Bool = true, limit: Int = 100) async throws -> [Session] {
+    ///   - start: Pagination offset — skip this many sessions before returning results.
+    func list(directory: String? = nil, roots: Bool = true, limit: Int = 100, start: Int? = nil) async throws -> [Session] {
         var items: [URLQueryItem] = []
         if let directory { items.append(URLQueryItem(name: "directory", value: directory)) }
         if roots { items.append(URLQueryItem(name: "roots", value: "true")) }
         items.append(URLQueryItem(name: "limit", value: String(limit)))
+        if let start { items.append(URLQueryItem(name: "start", value: String(start))) }
         let data = try await client.requestData(.get("/session", queryItems: items.isEmpty ? nil : items))
         #if DEBUG
         let preview = String(data: data, encoding: .utf8)?.prefix(3000) ?? "<nil>"
@@ -125,6 +165,23 @@ struct SessionAPI: Sendable {
         try await client.requestVoid(.delete("/session/\(id)"))
     }
 
+    /// Update a session (title, archived status, etc.).
+    /// - Parameters:
+    ///   - id: The session ID.
+    ///   - title: New title for the session, or `nil` to leave unchanged.
+    ///   - setArchived: `true` to archive (sets timestamp), `false` to unarchive (sends JSON null).
+    ///                  Pass `nil` to leave the archived status unchanged.
+    func update(id: String, title: String? = nil, setArchived: Bool? = nil) async throws -> Session {
+        let timeBody: UpdateBody.UpdateTimeBody? = setArchived.map { archive in
+            UpdateBody.UpdateTimeBody(
+                archived: archive ? .value(Date().timeIntervalSince1970) : .null
+            )
+        }
+        let body = UpdateBody(title: title, time: timeBody)
+        let data = try await client.requestData(.patch("/session/\(id)", body: body))
+        return try JSONDecoder().decode(Session.self, from: data)
+    }
+
     /// Abort a running session.
     func abort(id: String) async throws {
         try await client.requestVoid(APIEndpoint(path: "/session/\(id)/abort", method: .POST))
@@ -144,9 +201,8 @@ struct SessionAPI: Sendable {
     }
 
     /// Unshare a session (removes the share link).
-    func unshare(id: String) async throws -> Session {
-        let data = try await client.requestData(.delete("/session/\(id)/share"))
-        return try JSONDecoder().decode(Session.self, from: data)
+    func unshare(id: String) async throws {
+        try await client.requestVoid(.delete("/session/\(id)/share"))
     }
 
     /// Fork a session, optionally at a specific message.
