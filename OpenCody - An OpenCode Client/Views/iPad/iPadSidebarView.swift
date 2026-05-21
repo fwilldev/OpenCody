@@ -16,6 +16,7 @@ struct iPadSidebarView: View {
 
     @EnvironmentObject private var serverStore: ServerStoreModel
     @State private var expandedProjects: Set<String> = []
+    @State private var showTipJar: Bool = false
 
     /// Whether the active server's connection is in the offline state.
     private var isActiveServerOffline: Bool {
@@ -196,6 +197,23 @@ struct iPadSidebarView: View {
                         .buttonStyle(.plain)
                         .listRowBackground(Color.clear)
                     }
+
+                    // Support the Developer
+                    Button {
+                        showTipJar = true
+                    } label: {
+                        HStack(spacing: Theme.Spacing.sm) {
+                            Image(systemName: "heart")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(Theme.Colors.smoke)
+                            Text("Support the Developer")
+                                .font(Theme.Fonts.caption)
+                                .foregroundStyle(Theme.Colors.smoke)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .listRowBackground(Color.clear)
+                    .accessibilityLabel("Support the developer, opens tip options")
                 }
             } header: {
                 HStack {
@@ -245,6 +263,11 @@ struct iPadSidebarView: View {
             }
         }
         .task { }
+        .sheet(isPresented: $showTipJar) {
+            NavigationStack {
+                TipJarView()
+            }
+        }
         .onChange(of: viewModel.sessions) { _, _ in
             // Auto-expand any new projects
             // Keep collapsed by default

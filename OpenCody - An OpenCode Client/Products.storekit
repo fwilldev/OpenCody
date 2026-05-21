@@ -1,0 +1,115 @@
+{
+  "identifier" : "3B8A2F1E-4D5C-4E6F-8A7B-9C0D1E2F3A4B",
+  "nonRenewableSubscriptions" : [
+
+  ],
+  "products" : [
+    {
+      "displayPrice" : "0.99",
+      "familyShareable" : false,
+      "internalID" : "F1A2B3C4-D5E6-7890-ABCD-EF1234567890",
+      "localizations" : [
+        {
+          "description" : "Buy the developer a coffee ☕",
+          "displayName" : "Small Tip",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "tip_jar",
+      "referenceName" : "Small Tip Jar",
+      "type" : "Consumable"
+    },
+    {
+      "displayPrice" : "4.99",
+      "familyShareable" : false,
+      "internalID" : "A2B3C4D5-E6F7-8901-BCDE-F12345678901",
+      "localizations" : [
+        {
+          "description" : "A generous tip to support development 🧁",
+          "displayName" : "Medium Tip",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "mid_tip_jar",
+      "referenceName" : "Mid Tip Jar",
+      "type" : "Consumable"
+    },
+    {
+      "displayPrice" : "9.99",
+      "familyShareable" : false,
+      "internalID" : "B3C4D5E6-F7A8-9012-CDEF-123456789012",
+      "localizations" : [
+        {
+          "description" : "An amazing tip — you're awesome! 🎉",
+          "displayName" : "Big Tip",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "big_tip_jar",
+      "referenceName" : "Big Tip Jar",
+      "type" : "Consumable"
+    }
+  ],
+  "settings" : {
+    "_applicationInternalID" : "6741163558",
+    "_developerTeamID" : "2985V55R5X",
+    "_failTransactionsEnabled" : false,
+    "_lastSynchronizedDate" : "2026-03-10T09:00:00Z",
+    "_locale" : "en_US",
+    "_storefront" : "USA",
+    "_storeKitErrors" : [
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Load Products"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Purchase"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Verification"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "App Store Sync"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Subscription Status"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "App Transaction"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Manage Subscriptions Sheet"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Refund Request Sheet"
+      },
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Offer Code Redeem Sheet"
+      }
+    ]
+  },
+  "subscriptionGroups" : [
+
+  ],
+  "version" : {
+    "major" : 4,
+    "minor" : 0
+  }
+}

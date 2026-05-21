@@ -15,8 +15,15 @@ struct DashboardView: View {
     @State private var viewModel: DashboardViewModel
     @State private var showCreateSheet: Bool = false
     @State private var showAddServer: Bool = false
+    @State private var showTipJar: Bool = false
     @State private var createdSession: Session?
     @EnvironmentObject private var serverStore: ServerStoreModel
+
+    /// Tracks how many times this view has appeared during the current app session.
+    /// A count > 1 means the user navigated away (e.g. into a chat) and came back —
+    /// which is the "natural moment" for the occasional tip prompt.
+    @State private var viewAppearCount = 0
+    @Bindable private var tipPromptService = TipPromptService.shared
 
     // MARK: - Init
 
@@ -154,6 +161,28 @@ struct DashboardView: View {
         .onDisappear {
             viewModel.stopObservingEvents()
         }
+        .sheet(isPresented: $showTipJar) {
+            NavigationStack {
+                TipJarView()
+            }
+        }
+        .onAppear {
+            viewAppearCount += 1
+            // Only consider showing the prompt when returning to the dashboard
+            // after navigating away (e.g. after closing a chat), never on first display.
+            if viewAppearCount > 1 && tipPromptService.shouldShowPrompt {
+                tipPromptService.recordPromptShown()
+                tipPromptService.showPrompt = true
+            }
+        }
+        .alert("Enjoying OpenCody?", isPresented: $tipPromptService.showPrompt) {
+            Button("Sure, show me") {
+                showTipJar = true
+            }
+            Button("Maybe later", role: .cancel) { }
+        } message: {
+            Text("This app is a solo project and stays free and ad-free. If it's been useful to you, a small tip would mean a lot and helps keep development going.")
+        }
     }
 
     // MARK: - Subviews
@@ -270,6 +299,23 @@ struct DashboardView: View {
                     }
                     .buttonStyle(.plain)
                 }
+
+                // Support the Developer footer link
+                Button {
+                    showTipJar = true
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "heart")
+                            .font(.system(size: 11))
+                        Text("Support the Developer")
+                            .font(.footnote)
+                    }
+                    .foregroundStyle(Theme.Colors.smoke)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, Theme.Spacing.md)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Support the developer, opens tip options")
             }
             .padding(.horizontal, Theme.Spacing.md)
             .padding(.vertical, Theme.Spacing.sm)

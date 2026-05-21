@@ -72,6 +72,11 @@ struct SettingsView: View {
 
                     // MARK: - Notifications
                     SettingsSection(title: "Notifications") {
+                        Text("Notifications require OpenCody to stay active. If iOS closes the app in background, alerts may be delayed or missed.")
+                            .font(Theme.Fonts.caption)
+                            .foregroundStyle(Theme.Colors.silver)
+                            .padding(.bottom, Theme.Spacing.xs)
+
                         SettingsToggleRow(
                             icon: "checkmark.circle",
                             iconColor: Theme.Colors.neonGreen,
@@ -109,6 +114,20 @@ struct SettingsView: View {
                             detail: "Agent questions",
                             isOn: $notificationSettings.questionsEnabled
                         )
+                    }
+
+                    // MARK: - Support
+                    SettingsSection(title: "Support") {
+                        NavigationLink {
+                            TipJarView()
+                        } label: {
+                            SettingsRow(
+                                icon: "heart.fill",
+                                iconColor: Theme.Colors.hotPink,
+                                title: "Tip Jar",
+                                detail: "Support OpenCody's development"
+                            )
+                        }
                     }
 
                     // MARK: - About

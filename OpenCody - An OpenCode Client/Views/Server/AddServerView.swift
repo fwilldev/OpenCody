@@ -20,7 +20,7 @@ struct AddServerView: View {
 
     @State private var name: String = ""
     @State private var hostname: String = ""
-    @State private var port: String = "4096"
+    @State private var port: String = ""
     @State private var useHTTPS: Bool = false
     @State private var username: String = ""
     @State private var password: String = ""
@@ -40,15 +40,17 @@ struct AddServerView: View {
 
     private var urlPreview: String {
         let scheme = useHTTPS ? "https" : "http"
-        let portValue = port.isEmpty ? "4096" : port
         let host = hostname.isEmpty ? "hostname" : hostname
-        return "\(scheme)://\(host):\(portValue)"
+        if let portInt = Int(port), !port.isEmpty {
+            return "\(scheme)://\(host):\(portInt)"
+        }
+        return "\(scheme)://\(host)"
     }
 
     private var canSave: Bool {
         !name.trimmingCharacters(in: .whitespaces).isEmpty
             && !hostname.trimmingCharacters(in: .whitespaces).isEmpty
-            && (Int(port) ?? 0) > 0
+            && (port.isEmpty || (Int(port) != nil && (Int(port) ?? 0) > 0))
     }
 
     // MARK: - Body
@@ -118,9 +120,9 @@ struct AddServerView: View {
                 )
             }
 
-            fieldGroup(label: "Port") {
+            fieldGroup(label: "Port (optional)") {
                 GlassTextField(
-                    placeholder: "4096",
+                    placeholder: "Default",
                     text: $port,
                     keyboardType: .numberPad,
                     autocapitalization: .never
@@ -266,7 +268,7 @@ struct AddServerView: View {
     // MARK: - Actions
 
     private func testConnection() {
-        let portNumber = Int(port) ?? 4096
+        let portNumber = port.isEmpty ? nil : Int(port)
         let server = ServerConnection(
             name: name.isEmpty ? "Test" : name,
             hostname: hostname,
@@ -290,7 +292,7 @@ struct AddServerView: View {
     }
 
     private func saveServer() {
-        let portNumber = Int(port) ?? 4096
+        let portNumber = port.isEmpty ? nil : Int(port)
         let connection = ServerConnection(
             name: name.trimmingCharacters(in: .whitespaces),
             hostname: hostname.trimmingCharacters(in: .whitespaces),

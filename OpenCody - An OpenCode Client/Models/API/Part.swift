@@ -409,19 +409,59 @@ struct ToolPart: Codable, Identifiable, Sendable, PartFields {
     let metadata: [String: AnyCodable]?
 
     private enum CodingKeys: String, CodingKey {
-        case id, sessionID, messageID, type, callID, tool, state, metadata
+        case id
+        case sessionID
+        case sessionIDCamel = "sessionId"
+        case sessionIDSnake = "session_id"
+        case messageID
+        case messageIDCamel = "messageId"
+        case messageIDSnake = "message_id"
+        case type
+        case callID
+        case callIDCamel = "callId"
+        case callIDSnake = "call_id"
+        case tool
+        case state
+        case metadata
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = (try? container.decodeIfPresent(String.self, forKey: .id)) ?? UUID().uuidString
-        sessionID = (try? container.decodeIfPresent(String.self, forKey: .sessionID)) ?? ""
-        messageID = (try? container.decodeIfPresent(String.self, forKey: .messageID)) ?? ""
+        sessionID =
+            (try? container.decodeIfPresent(String.self, forKey: .sessionID))
+            ?? (try? container.decodeIfPresent(String.self, forKey: .sessionIDCamel))
+            ?? (try? container.decodeIfPresent(String.self, forKey: .sessionIDSnake))
+            ?? ""
+        messageID =
+            (try? container.decodeIfPresent(String.self, forKey: .messageID))
+            ?? (try? container.decodeIfPresent(String.self, forKey: .messageIDCamel))
+            ?? (try? container.decodeIfPresent(String.self, forKey: .messageIDSnake))
+            ?? ""
         type = (try? container.decodeIfPresent(String.self, forKey: .type)) ?? "tool"
-        callID = (try? container.decodeIfPresent(String.self, forKey: .callID)) ?? ""
+        callID =
+            (try? container.decodeIfPresent(String.self, forKey: .callID))
+            ?? (try? container.decodeIfPresent(Int.self, forKey: .callID)).map(String.init)
+            ?? (try? container.decodeIfPresent(String.self, forKey: .callIDCamel))
+            ?? (try? container.decodeIfPresent(Int.self, forKey: .callIDCamel)).map(String.init)
+            ?? (try? container.decodeIfPresent(String.self, forKey: .callIDSnake))
+            ?? (try? container.decodeIfPresent(Int.self, forKey: .callIDSnake)).map(String.init)
+            ?? ""
         tool = (try? container.decodeIfPresent(String.self, forKey: .tool)) ?? ""
         state = try container.decode(ToolState.self, forKey: .state)
         metadata = try? container.decodeIfPresent([String: AnyCodable].self, forKey: .metadata)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(sessionID, forKey: .sessionID)
+        try container.encode(messageID, forKey: .messageID)
+        try container.encode(type, forKey: .type)
+        try container.encode(callID, forKey: .callID)
+        try container.encode(tool, forKey: .tool)
+        try container.encode(state, forKey: .state)
+        try container.encodeIfPresent(metadata, forKey: .metadata)
     }
 }
 

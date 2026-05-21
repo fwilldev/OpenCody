@@ -12,7 +12,7 @@ final class ServerConnection: Identifiable, Codable {
     var id: UUID
     var name: String
     var hostname: String
-    var port: Int
+    var port: Int?
     var useHTTPS: Bool
     var username: String
     var keychainIdentifier: String
@@ -23,14 +23,17 @@ final class ServerConnection: Identifiable, Codable {
     /// Computed base URL — not stored by SwiftData.
     var baseURL: String {
         let scheme = useHTTPS ? "https" : "http"
-        return "\(scheme)://\(hostname):\(port)"
+        if let port {
+            return "\(scheme)://\(hostname):\(port)"
+        }
+        return "\(scheme)://\(hostname)"
     }
 
     init(
         id: UUID = UUID(),
         name: String,
         hostname: String,
-        port: Int = 4096,
+        port: Int? = 4096,
         useHTTPS: Bool = false,
         username: String = "",
         keychainIdentifier: String = UUID().uuidString,
@@ -68,7 +71,7 @@ final class ServerConnection: Identifiable, Codable {
         id = try container.decode(UUID.self, forKey: .id)
         name = try container.decode(String.self, forKey: .name)
         hostname = try container.decode(String.self, forKey: .hostname)
-        port = try container.decode(Int.self, forKey: .port)
+        port = try container.decodeIfPresent(Int.self, forKey: .port)
         useHTTPS = try container.decode(Bool.self, forKey: .useHTTPS)
         username = try container.decode(String.self, forKey: .username)
         keychainIdentifier = try container.decode(String.self, forKey: .keychainIdentifier)
@@ -82,7 +85,7 @@ final class ServerConnection: Identifiable, Codable {
         try container.encode(id, forKey: .id)
         try container.encode(name, forKey: .name)
         try container.encode(hostname, forKey: .hostname)
-        try container.encode(port, forKey: .port)
+        try container.encodeIfPresent(port, forKey: .port)
         try container.encode(useHTTPS, forKey: .useHTTPS)
         try container.encode(username, forKey: .username)
         try container.encode(keychainIdentifier, forKey: .keychainIdentifier)

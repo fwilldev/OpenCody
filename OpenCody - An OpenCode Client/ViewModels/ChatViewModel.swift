@@ -59,16 +59,58 @@ final class ChatViewModel {
 
     var session: Session
     var messages: [MessageWithParts] = []
-    var isGenerating: Bool = false
     var pendingPermission: Permission? = nil
     var pendingQuestionRequestIDs: Set<String> = []
     var error: String? = nil
 
+    /// Server-reported session status. Updated from SSE events and REST polling.
+    /// Drives `isGenerating` reactively instead of manual toggling.
+    private(set) var sessionStatus: SessionStatus = .idle
+
+    /// Optimistic local flag: set `true` when the user sends a prompt,
+    /// cleared when the first server-side status event arrives.
+    /// Bridges the gap between "user pressed send" and "server confirmed busy".
+    private var isLocallyGenerating: Bool = false
+
+    /// Whether the session is actively generating a response.
+    ///
+    /// Derived from:
+    /// 1. Server-reported `sessionStatus` (`.busy` or `.retry`)
+    /// 2. Optimistic local state (after sending a prompt, before server confirms)
+    ///
+    /// This can never get "stuck" because server status always resolves to idle,
+    /// and the fallback polling ensures we see it.
+    var isGenerating: Bool {
+        switch sessionStatus {
+        case .busy, .retry:
+            return true
+        case .idle:
+            return isLocallyGenerating
+        }
+    }
+
     /// The first pending question request for the session, if any.
     /// Drives the `SessionQuestionDock` overlay.
     var activeQuestionRequest: QuestionRequest? {
-        guard let firstID = pendingQuestionRequestIDs.first else { return nil }
-        return questionRequestsByID[firstID]
+        // Prefer the most recent visible tool-bound pending question to avoid
+        // arbitrary Set iteration when multiple questions are pending.
+        for message in messages.reversed() {
+            for part in message.parts.reversed() {
+                guard case .tool(let toolPart) = part else { continue }
+                if let request = questionRequest(for: toolPart),
+                   pendingQuestionRequestIDs.contains(request.id) {
+                    return request
+                }
+            }
+        }
+
+        // Deterministic fallback by request ID.
+        for id in pendingQuestionRequestIDs.sorted() {
+            if let request = questionRequestsByID[id], pendingQuestionRequestIDs.contains(request.id) {
+                return request
+            }
+        }
+        return nil
     }
 
     /// Whether the session is blocked waiting for question input.
@@ -81,6 +123,11 @@ final class ChatViewModel {
     var selectedAgentID: String? = nil
     var selectedModelID: String? = nil
     var selectedProviderID: String? = nil
+
+    /// Monotonically increasing counter bumped on every content mutation
+    /// (streaming deltas, new parts, message upserts).  The ChatView
+    /// observes this to auto-scroll during streaming.
+    var scrollTrigger: UInt64 = 0
 
     /// Messages filtered for display: removes "step-only" messages (those containing
     /// exclusively step-start / step-finish parts with no real content).
@@ -115,6 +162,23 @@ final class ChatViewModel {
     @ObservationIgnored private var lastSSEEventAt: Date?
     /// Fallback polling task when SSE isn't delivering events.
     @ObservationIgnored private var pollTask: Task<Void, Never>?
+    /// Monotonic generation to avoid stale poll-task teardown races.
+    @ObservationIgnored private var pollTaskGeneration: UInt64 = 0
+    /// Questions received via SSE before their tool/message becomes visible.
+    @ObservationIgnored private var deferredQuestionRequestsByID: [String: QuestionRequest] = [:]
+    /// Question IDs that have been confirmed as pending (via SSE event OR REST discovery).
+    /// Once a question enters this set it is **sticky** — only an explicit reply/reject
+    /// event (or session reset) can remove it.  This prevents transient REST empty
+    /// responses from wiping known questions.
+    @ObservationIgnored private var confirmedQuestionIDs: Set<String> = []
+    /// Recently dismissed question IDs (answered/rejected locally). Maps ID → dismissal
+    /// timestamp. REST polls ignore these IDs for a short cooldown to prevent the server's
+    /// eventual-consistency lag from re-confirming a question the user already handled.
+    @ObservationIgnored private var dismissedQuestionCooldowns: [String: Date] = [:]
+    @ObservationIgnored private let dismissCooldownSeconds: TimeInterval = 10
+    /// Throttle global (/question without directory) fallback scans.
+    @ObservationIgnored private var lastGlobalQuestionScanAt: Date?
+    @ObservationIgnored private let globalQuestionScanInterval: TimeInterval = 10
     @ObservationIgnored private let initialMessageBatch = 60
     @ObservationIgnored private let loadMoreBatch = 40
 
@@ -159,19 +223,21 @@ final class ChatViewModel {
         }
     }
 
-    /// Queries the server for the current session status and updates `isGenerating`.
+    /// Queries the server for the current session status and updates `sessionStatus`.
     /// Called after loading messages to ensure the UI reflects the true server state.
     private func syncGeneratingStatus(client: APIClient) async {
         let sessionAPI = SessionAPI(client: client)
-        if let statusMap = try? await sessionAPI.status(),
-           let status = statusMap[session.id] {
+        if let statusMap = try? await sessionAPI.status() {
+            let status = statusMap[session.id] ?? .idle
+            sessionStatus = status
+            isLocallyGenerating = false  // Server is authoritative.
             switch status {
             case .idle:
-                isGenerating = false
-                pollTask?.cancel()
-                pollTask = nil
+                if !isBlockedByQuestion {
+                    pollTask?.cancel()
+                    pollTask = nil
+                }
             case .busy, .retry:
-                isGenerating = true
                 startFallbackPollingIfNeeded()
             }
         }
@@ -203,7 +269,7 @@ final class ChatViewModel {
         }
 
         appendLocalUserMessage(text: text, attachments: attachments)
-        isGenerating = true
+        isLocallyGenerating = true
         error = nil
 
         do {
@@ -218,8 +284,8 @@ final class ChatViewModel {
             )
             startFallbackPollingIfNeeded()
         } catch {
-            // Reset isGenerating if the send call itself failed.
-            isGenerating = false
+            // Reset isLocallyGenerating if the send call itself failed.
+            isLocallyGenerating = false
             self.error = error.localizedDescription
         }
     }
@@ -235,7 +301,7 @@ final class ChatViewModel {
         // Show the command as a local user message for immediate feedback
         let displayText = "/" + name + (arguments.map { " " + $0 } ?? "")
         appendLocalUserMessage(text: displayText, attachments: [])
-        isGenerating = true
+        isLocallyGenerating = true
         error = nil
 
         do {
@@ -243,7 +309,7 @@ final class ChatViewModel {
             try await api.execute(sessionID: session.id, name: name, arguments: arguments)
             startFallbackPollingIfNeeded()
         } catch {
-            isGenerating = false
+            isLocallyGenerating = false
             self.error = error.localizedDescription
         }
     }
@@ -257,7 +323,7 @@ final class ChatViewModel {
         }
 
         appendLocalUserMessage(text: "$ " + command, attachments: [])
-        isGenerating = true
+        isLocallyGenerating = true
         error = nil
 
         do {
@@ -265,7 +331,7 @@ final class ChatViewModel {
             try await api.shell(id: session.id, command: command, agent: selectedAgentID ?? "coder", providerID: selectedProviderID, modelID: selectedModelID)
             startFallbackPollingIfNeeded()
         } catch {
-            isGenerating = false
+            isLocallyGenerating = false
             self.error = error.localizedDescription
         }
     }
@@ -278,14 +344,18 @@ final class ChatViewModel {
 
         let api = SessionAPI(client: client)
         try await api.abort(id: session.id)
-        // Reset isGenerating immediately as a fallback.
+        // Reset immediately as a fallback.
         // Normally the server sends a session.idle SSE event, but if SSE
         // is lagging or the event is missed the UI would stay stuck.
-        isGenerating = false
+        sessionStatus = .idle
+        isLocallyGenerating = false
         pendingPermission = nil
         pendingQuestionRequestIDs.removeAll()
         questionRequestsByToolCall.removeAll()
         questionRequestsByID.removeAll()
+        deferredQuestionRequestsByID.removeAll()
+        confirmedQuestionIDs.removeAll()
+        dismissedQuestionCooldowns.removeAll()
         pollTask?.cancel()
         pollTask = nil
     }
@@ -310,10 +380,23 @@ final class ChatViewModel {
             throw OpenCodeError.connectionFailed("No active server connection")
         }
 
+        #if DEBUG
+        print("[ChatViewModel] replyToQuestion requestID=\(request.id) session=\(request.sessionID) answers=\(answers)")
+        #endif
         let api = QuestionAPI(client: client)
-        try await api.reply(requestID: request.id, answers: answers, directory: session.directory)
+        do {
+            try await api.reply(requestID: request.id, answers: answers)
+            #if DEBUG
+            print("[ChatViewModel] replyToQuestion SUCCESS requestID=\(request.id)")
+            #endif
+        } catch {
+            #if DEBUG
+            print("[ChatViewModel] replyToQuestion FAILED requestID=\(request.id) error=\(error)")
+            #endif
+            throw error
+        }
         removeQuestionRequest(request)
-        isGenerating = true
+        isLocallyGenerating = true
         startFallbackPollingIfNeeded()
     }
 
@@ -323,10 +406,23 @@ final class ChatViewModel {
             throw OpenCodeError.connectionFailed("No active server connection")
         }
 
+        #if DEBUG
+        print("[ChatViewModel] rejectQuestion requestID=\(request.id) session=\(request.sessionID)")
+        #endif
         let api = QuestionAPI(client: client)
-        try await api.reject(requestID: request.id, directory: session.directory)
+        do {
+            try await api.reject(requestID: request.id)
+            #if DEBUG
+            print("[ChatViewModel] rejectQuestion SUCCESS requestID=\(request.id)")
+            #endif
+        } catch {
+            #if DEBUG
+            print("[ChatViewModel] rejectQuestion FAILED requestID=\(request.id) error=\(error)")
+            #endif
+            throw error
+        }
         removeQuestionRequest(request)
-        isGenerating = true
+        isLocallyGenerating = true
         startFallbackPollingIfNeeded()
     }
 
@@ -337,9 +433,11 @@ final class ChatViewModel {
 
     /// Subscribe to SSE events for live message/part/permission updates.
     func startObservingEvents() {
-        // Scope SSE stream to this session's directory before subscribing
-        // so the stream restarts with the correct filter.
-        connectionManager.setActiveEventDirectory(session.directory)
+        // Do not scope SSE stream by directory here.
+        // Directory-prefix filtering can drop valid session events (status/question)
+        // when path normalization differs between server/client. We route by session
+        // inside handleEvent/isEventForSession and keep REST as fallback.
+        connectionManager.setActiveEventDirectory(nil)
         eventToken = connectionManager.subscribeToEvents { [weak self] event in
             self?.handleEvent(event)
         }
@@ -359,7 +457,7 @@ final class ChatViewModel {
         eventToken = nil
         refreshToken = nil
 
-        // Clear directory filter when leaving this session.
+        // Keep global stream mode.
         connectionManager.setActiveEventDirectory(nil)
         pollTask?.cancel()
         pollTask = nil
@@ -487,33 +585,72 @@ final class ChatViewModel {
             pendingPermission = nil
 
         case .questionAsked(let request):
+            // Simplified question handling: show immediately if for this session.
+            // The reference implementation proves that session-scoped question
+            // display (without tool-part matching) works reliably.
             guard request.sessionID == session.id else { return }
             storeQuestionRequest(request)
+#if DEBUG
+            print("[ChatViewModel] question.asked accepted id=\(request.id) session=\(request.sessionID)")
+#endif
+            // Ensure watchdog is active even if session status switched to idle
+            // while waiting for the question reply.
+            if pollTask == nil {
+                startFallbackPollingIfNeeded()
+            }
 
         case .questionReplied(let payload):
-            guard payload.sessionID == session.id else { return }
+            guard payload.sessionID == session.id || pendingQuestionRequestIDs.contains(payload.requestID) else { return }
             removeQuestionRequest(withID: payload.requestID)
+            deferredQuestionRequestsByID.removeValue(forKey: payload.requestID)
 
         case .questionRejected(let payload):
-            guard payload.sessionID == session.id else { return }
+            guard payload.sessionID == session.id || pendingQuestionRequestIDs.contains(payload.requestID) else { return }
             removeQuestionRequest(withID: payload.requestID)
+            deferredQuestionRequestsByID.removeValue(forKey: payload.requestID)
 
         case .sessionStatus(let payload):
             guard payload.sessionID == session.id else { return }
+            sessionStatus = payload.status
+            isLocallyGenerating = false  // Server status is authoritative; clear optimistic flag.
             switch payload.status {
             case .idle:
-                isGenerating = false
-                pollTask?.cancel()
-                pollTask = nil
+                // When session goes idle due to a question, don't kill the poll task.
+                // The poll loop checks isBlockedByQuestion to stay alive.
+                if !isBlockedByQuestion {
+                    pollTask?.cancel()
+                    pollTask = nil
+                }
+                // Safety net: trigger a one-shot question poll in case the SSE
+                // question.asked event was missed during a reconnection gap.
+                Task { [weak self] in
+                    await self?.pollPendingQuestions()
+                    // If we just discovered a question and had no poll task, start one
+                    if let self, self.isBlockedByQuestion, self.pollTask == nil {
+                        self.startFallbackPollingIfNeeded()
+                    }
+                }
             case .busy, .retry:
-                isGenerating = true
+                if pollTask == nil {
+                    startFallbackPollingIfNeeded()
+                }
             }
 
         case .sessionIdle(let sessionID):
             guard sessionID == session.id else { return }
-            isGenerating = false
-            pollTask?.cancel()
-            pollTask = nil
+            sessionStatus = .idle
+            isLocallyGenerating = false
+            if !isBlockedByQuestion {
+                pollTask?.cancel()
+                pollTask = nil
+            }
+            // Safety net: poll for questions that might have been missed via SSE
+            Task { [weak self] in
+                await self?.pollPendingQuestions()
+                if let self, self.isBlockedByQuestion, self.pollTask == nil {
+                    self.startFallbackPollingIfNeeded()
+                }
+            }
 
 
         case .messagePartDelta(let payload):
@@ -536,6 +673,11 @@ final class ChatViewModel {
             }
 
         default:
+#if DEBUG
+            if case .unknown(let eventName, _) = event {
+                print("[ChatViewModel] unknown SSE event: \(eventName)")
+            }
+#endif
             break
         }
     }
@@ -580,50 +722,85 @@ final class ChatViewModel {
     /// Even when SSE events are flowing, the watchdog periodically polls the server
     /// for session status. This guards against silently dropped `session.idle` events
     /// that would otherwise leave `isGenerating` stuck at `true` forever.
+    ///
+    /// The loop stays alive while `isGenerating` OR `isBlockedByQuestion` — when the
+    /// server is waiting for a question answer it reports `idle`, but we must keep
+    /// polling so the question dock appears and the loop resumes after the user answers.
     private func startFallbackPollingIfNeeded() {
         pollTask?.cancel()
+        pollTaskGeneration &+= 1
+        let generation = pollTaskGeneration
         pollTask = Task { [weak self] in
             guard let self else { return }
-            // Give SSE a short window to deliver the first events.
-            try? await Task.sleep(for: .seconds(5))
-            guard self.isGenerating else { return }
-
-            // Periodic watchdog: keep checking until isGenerating is false.
-            while self.isGenerating, !Task.isCancelled {
-                // Always poll for session status, even when SSE is active.
-                // This catches cases where session.idle events are missed/dropped.
+            defer {
+                if self.pollTaskGeneration == generation {
+                    self.pollTask = nil
+                }
+            }
+            // Poll immediately at least once. If the server transitions to idle quickly
+            // because it's waiting on a question, a delayed first poll can miss the
+            // pending question and terminate too early.
+            while !Task.isCancelled {
+                // Poll questions FIRST — must discover pending questions before
+                // pollSessionStatus() sets isGenerating=false, which would exit
+                // the loop if no question was found yet.
+                await self.pollPendingQuestions()
                 await self.pollSessionStatus()
 
-                guard self.isGenerating, !Task.isCancelled else { break }
+                let shouldContinue = self.isGenerating || self.isBlockedByQuestion
+                if !shouldContinue || Task.isCancelled {
+                    // Grace window for eventual consistency: when session flips to idle,
+                    // the pending question may appear via REST moments later.
+                    var recovered = false
+                    for _ in 0..<3 where !Task.isCancelled {
+                        try? await Task.sleep(for: .seconds(1))
+                        await self.pollPendingQuestions()
+                        if self.isBlockedByQuestion {
+                            recovered = true
+                            break
+                        }
+                    }
+                    if !recovered || Task.isCancelled {
+                        break
+                    }
+                }
 
                 // If SSE is silent, also poll for messages (full sync).
                 let sseRecent = self.lastSSEEventAt.map { Date().timeIntervalSince($0) < 5 } ?? false
-                if !sseRecent {
+                if !sseRecent && self.isGenerating {
                     await self.pollForCompletion()
                 }
 
-                if self.isGenerating {
-                    try? await Task.sleep(for: .seconds(3))
-                }
+                try? await Task.sleep(for: .seconds(1))
             }
+
         }
     }
 
-    /// Quick check of session status via REST. Sets `isGenerating = false` if idle.
+    /// Quick check of session status via REST. Updates `sessionStatus` if idle.
+    ///
+    /// Does NOT cancel the poll task — the loop condition (`isGenerating || isBlockedByQuestion`)
+    /// handles termination. This prevents killing the poll while a question is pending.
     private func pollSessionStatus() async {
         guard let client = connectionManager.activeAPIClient else { return }
         let sessionAPI = SessionAPI(client: client)
-        if let statusMap = try? await sessionAPI.status(),
-           let status = statusMap[session.id] {
-            switch status {
-            case .idle:
-                isGenerating = false
-                pollTask?.cancel()
-                pollTask = nil
-            case .busy, .retry:
-                break // still generating
-            }
+        if let statusMap = try? await sessionAPI.status() {
+            let status = statusMap[session.id] ?? .idle
+#if DEBUG
+            let inMap = statusMap[session.id] != nil
+            print("[ChatViewModel] pollSessionStatus session=\(session.id) status=\(status) inMap=\(inMap) generating=\(isGenerating) blocked=\(isBlockedByQuestion)")
+#endif
+            sessionStatus = status
+            isLocallyGenerating = false  // Server is authoritative.
+            // Don't cancel pollTask here — the loop condition handles termination.
+            // If isBlockedByQuestion is true, we need the loop to stay alive.
         }
+    }
+
+    /// Poll for pending questions via REST. Ensures question dock appears even if SSE event was missed.
+    private func pollPendingQuestions() async {
+        guard let client = connectionManager.activeAPIClient else { return }
+        await refreshPendingQuestions(client: client)
     }
 
     /// Poll the message list until a new assistant message appears or generation ends.
@@ -653,12 +830,15 @@ final class ChatViewModel {
 
                 await refreshPendingQuestions(api: questionAPI)
 
-                if let statusMap = try? await sessionAPI.status(),
-                   let status = statusMap[session.id] {
+                if let statusMap = try? await sessionAPI.status() {
+                    let status = statusMap[session.id] ?? .idle
                     if case .idle = status {
-                        isGenerating = false
-                        pollTask?.cancel()
-                        pollTask = nil
+                        sessionStatus = .idle
+                        isLocallyGenerating = false
+                        if !isBlockedByQuestion {
+                            pollTask?.cancel()
+                            pollTask = nil
+                        }
                         return
                     }
                 }
@@ -680,16 +860,59 @@ final class ChatViewModel {
 
     func questionRequest(for tool: ToolPart) -> QuestionRequest? {
         let key = ToolCallKey(messageID: tool.messageID, callID: tool.callID)
-        return questionRequestsByToolCall[key]
+        if let mapped = questionRequestsByToolCall[key] {
+            return mapped
+        }
+
+        // Fallback for payloads with missing/legacy fields:
+        // match pending requests by strict message+call where both call IDs are present.
+        for request in questionRequestsByID.values {
+            guard pendingQuestionRequestIDs.contains(request.id) else { continue }
+            guard let ref = request.tool else { continue }
+            guard ref.messageID == tool.messageID else { continue }
+            guard !ref.callID.isEmpty, !tool.callID.isEmpty else { continue }
+            if ref.callID == tool.callID {
+                return request
+            }
+        }
+
+        // Last-resort fallback when call IDs are missing/mismatched in payloads:
+        // match by message ID when there is a single unambiguous candidate.
+        let looseCandidates = questionRequestsByID.values.filter { request in
+            guard pendingQuestionRequestIDs.contains(request.id) else { return false }
+            guard let ref = request.tool else { return false }
+            guard ref.messageID == tool.messageID else { return false }
+            guard tool.tool == "question" else { return false }
+            if !ref.callID.isEmpty, !tool.callID.isEmpty {
+                return ref.callID == tool.callID
+            }
+            return true
+        }
+        if looseCandidates.count == 1 {
+            return looseCandidates[0]
+        }
+        return nil
     }
 
     private func storeQuestionRequest(_ request: QuestionRequest) {
         questionRequestsByID[request.id] = request
+        pendingQuestionRequestIDs.remove(request.id)
         pendingQuestionRequestIDs.insert(request.id)
+        deferredQuestionRequestsByID.removeValue(forKey: request.id)
+        confirmedQuestionIDs.insert(request.id)
         if let tool = request.tool {
-            let key = ToolCallKey(messageID: tool.messageID, callID: tool.callID)
-            questionRequestsByToolCall[key] = request
+            if !tool.callID.isEmpty {
+                let key = ToolCallKey(messageID: tool.messageID, callID: tool.callID)
+                questionRequestsByToolCall[key] = request
+            }
         }
+#if DEBUG
+        if let tool = request.tool {
+            print("[ChatViewModel] Stored question request id=\(request.id) session=\(request.sessionID) tool=(msg=\(tool.messageID), call=\(tool.callID))")
+        } else {
+            print("[ChatViewModel] Stored question request id=\(request.id) session=\(request.sessionID) (no tool ref)")
+        }
+#endif
     }
 
     private func removeQuestionRequest(_ request: QuestionRequest) {
@@ -698,6 +921,9 @@ final class ChatViewModel {
 
     private func removeQuestionRequest(withID requestID: String) {
         pendingQuestionRequestIDs.remove(requestID)
+        confirmedQuestionIDs.remove(requestID)
+        dismissedQuestionCooldowns[requestID] = Date()
+        deferredQuestionRequestsByID.removeValue(forKey: requestID)
         if let existing = questionRequestsByID.removeValue(forKey: requestID),
            let tool = existing.tool {
             let key = ToolCallKey(messageID: tool.messageID, callID: tool.callID)
@@ -710,14 +936,70 @@ final class ChatViewModel {
         await refreshPendingQuestions(api: api)
     }
 
+    /// Refresh pending questions from REST, merging with confirmed state.
+    ///
+    /// REST results are **additive**: newly discovered questions are added and
+    /// marked as confirmed.  Confirmed questions (whether discovered via SSE or
+    /// a previous REST poll) can NEVER be removed by a subsequent empty REST
+    /// response.  Only explicit `question.replied` / `question.rejected` events
+    /// (handled elsewhere) clear confirmed questions.
     private func refreshPendingQuestions(api: QuestionAPI) async {
         do {
-            let pending = try await api.list(directory: session.directory)
-            let byID = Dictionary(uniqueKeysWithValues: pending.map { ($0.id, $0) })
+            var all = try await api.list(directory: session.directory)
+            // Fallback: some server setups/path normalizations can return empty when
+            // filtering by directory. Retry global list occasionally while generating
+            // or when already blocked by a question.
+            if all.isEmpty {
+                let now = Date()
+                let shouldScanGlobal: Bool = {
+                    guard let last = lastGlobalQuestionScanAt else { return true }
+                    return now.timeIntervalSince(last) >= globalQuestionScanInterval
+                }()
+                if shouldScanGlobal {
+                    lastGlobalQuestionScanAt = now
+                    if let global = try? await api.list(directory: nil), !global.isEmpty {
+                        all = global
+#if DEBUG
+                        print("[ChatViewModel] refreshPendingQuestions used global fallback count=\(global.count)")
+#endif
+                    }
+                }
+            }
+            // Filter to this session only.
+            let pending = all.filter { $0.sessionID == session.id }
+            var byID = Dictionary(uniqueKeysWithValues: pending.map { ($0.id, $0) })
+
+            // Expire old cooldowns and skip recently-dismissed questions so that
+            // REST eventual-consistency lag doesn't resurrect answered questions.
+            let now = Date()
+            dismissedQuestionCooldowns = dismissedQuestionCooldowns.filter { _, dismissedAt in
+                now.timeIntervalSince(dismissedAt) < dismissCooldownSeconds
+            }
+            for cooldownID in dismissedQuestionCooldowns.keys {
+                byID.removeValue(forKey: cooldownID)
+            }
+
+            // Mark every REST-discovered question as confirmed so future empty
+            // REST responses can't wipe it.
+            for id in byID.keys {
+                confirmedQuestionIDs.insert(id)
+            }
+
+            // Preserve confirmed questions that REST didn't return this time.
+            // These are sticky — only reply/reject events can remove them.
+            for requestID in confirmedQuestionIDs {
+                guard byID[requestID] == nil else { continue }
+                guard let local = questionRequestsByID[requestID] else { continue }
+                byID[requestID] = local
+            }
+
+#if DEBUG
+            print("[ChatViewModel] refreshPendingQuestions rest=\(pending.count) confirmed=\(confirmedQuestionIDs.count) final=\(byID.count)")
+#endif
             questionRequestsByID = byID
-            pendingQuestionRequestIDs = Set(pending.map(\.id))
-            questionRequestsByToolCall = pending.reduce(into: [:]) { result, request in
-                if let tool = request.tool {
+            pendingQuestionRequestIDs = Set(byID.keys)
+            questionRequestsByToolCall = byID.values.reduce(into: [:]) { result, request in
+                if let tool = request.tool, !tool.callID.isEmpty {
                     let key = ToolCallKey(messageID: tool.messageID, callID: tool.callID)
                     result[key] = request
                 }
@@ -783,6 +1065,7 @@ final class ChatViewModel {
         }
         refreshFilteredMessages()
         updatePaginationState(wasFullyLoaded: wasFullyLoaded)
+        scrollTrigger &+= 1
     }
 
     /// Add a local optimistic user message so the chat feels instant.
@@ -838,6 +1121,7 @@ final class ChatViewModel {
         pendingLocalUserMessageIDs.insert(tempMessageID)
         refreshFilteredMessages()
         updatePaginationState(wasFullyLoaded: wasFullyLoaded)
+        scrollTrigger &+= 1
     }
 
     /// Upsert a part into the matching message's parts array.
@@ -917,6 +1201,7 @@ final class ChatViewModel {
             )
             messages[msgIdx].parts[partIdx] = .text(updated)
             refreshFilteredMessages()
+            scrollTrigger &+= 1
 
         case .reasoning(let rp):
             guard delta.field.isEmpty || delta.field == "text" || delta.field == "reasoning" || delta.field == "content" else { break }
@@ -933,6 +1218,7 @@ final class ChatViewModel {
             )
             messages[msgIdx].parts[partIdx] = .reasoning(updated)
             refreshFilteredMessages()
+            scrollTrigger &+= 1
 
         default:
             // Other part types don't have streaming text deltas

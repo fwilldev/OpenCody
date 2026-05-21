@@ -19,6 +19,13 @@ enum SSEClientState: Sendable {
 /// Handles SSE connection, parsing, and reconnection via `LDSwiftEventSource.EventSource`.
 /// Bridges the EventHandler callbacks to MainActor-safe closures.
 ///
+/// Features:
+/// - **Serial event ordering**: Events are delivered through an `AsyncStream` to
+///   guarantee strict ordering on MainActor, even under high throughput.
+/// - **Heartbeat timeout**: If no event (including server comments) arrives within
+///   `heartbeatTimeout` seconds, the client automatically reconnects to detect
+///   silently-dropped TCP connections.
+///
 /// Usage:
 /// ```swift
 /// let client = SSEClient(
@@ -43,7 +50,22 @@ final class SSEClient {
     let onStateChange: @MainActor (SSEClientState) -> Void
     let maxReconnectAttempts: Int
 
+    /// Duration in seconds before a silent connection is considered dead.
+    /// Matches the reference implementation's `HEARTBEAT_TIMEOUT_MS = 15_000`.
+    let heartbeatTimeout: TimeInterval
+
     private var eventSource: EventSource?
+
+    /// Serial event stream — events from LDSwiftEventSource's DispatchQueue are
+    /// funnelled through this stream so that MainActor receives them in strict order.
+    private var eventContinuation: AsyncStream<SSEEvent>.Continuation?
+    private var eventConsumerTask: Task<Void, Never>?
+
+    /// Heartbeat watchdog task — cancels & reconnects when no activity is detected.
+    private var heartbeatTask: Task<Void, Never>?
+
+    /// Thread-safe timestamp of the last received message or comment from the server.
+    private let lastActivityAt = AtomicDate()
 
     // MARK: - Init
 
@@ -52,6 +74,7 @@ final class SSEClient {
         authHeader: String?,
         directoryFilter: String?,
         maxReconnectAttempts: Int = 5,
+        heartbeatTimeout: TimeInterval = 15.0,
         onEvent: @escaping @MainActor (SSEEvent) -> Void,
         onStateChange: @escaping @MainActor (SSEClientState) -> Void
     ) {
@@ -59,6 +82,7 @@ final class SSEClient {
         self.authHeader = authHeader
         self.directoryFilter = directoryFilter
         self.maxReconnectAttempts = maxReconnectAttempts
+        self.heartbeatTimeout = heartbeatTimeout
         self.onEvent = onEvent
         self.onStateChange = onStateChange
     }
@@ -72,12 +96,25 @@ final class SSEClient {
 
         guard let url = URL(string: urlString) else { return }
 
-        // Capture callbacks and state for use in the nonisolated handler
+        // --- Serial event stream ---
+        // All parsed SSEEvents are yielded into this stream from LDSwiftEventSource's
+        // internal DispatchQueue. A single consumer Task drains the stream on MainActor,
+        // guaranteeing strict ordering.
+        let (stream, continuation) = AsyncStream<SSEEvent>.makeStream()
+        self.eventContinuation = continuation
         let onEvent = self.onEvent
+        self.eventConsumerTask = Task { @MainActor in
+            for await event in stream {
+                onEvent(event)
+            }
+        }
+
+        // Capture callbacks and state for use in the nonisolated handler
         let onStateChange = self.onStateChange
         let normalizeEventFn = self.normalizeEvent(eventName:data:)
         let shouldHandleEventFn = self.shouldHandleEvent(data:)
         let maxAttempts = self.maxReconnectAttempts
+        let activityTracker = self.lastActivityAt
 
         // Thread-safe counter for reconnect attempts (called from LDSwiftEventSource's internal DispatchQueue)
         let reconnectCounter = Counter()
@@ -85,6 +122,7 @@ final class SSEClient {
         let handler = Handler(
             onOpenedCallback: {
                 reconnectCounter.reset()
+                activityTracker.touch()
                 Task { @MainActor in
                     onStateChange(.connected)
                 }
@@ -99,21 +137,28 @@ final class SSEClient {
                 }
             },
             onMessageCallback: { eventType, messageEvent in
+                activityTracker.touch()
                 let data = messageEvent.data
 
                 guard shouldHandleEventFn(data) else { return }
 
                 let normalized = normalizeEventFn(eventType, data)
 
-                guard let event = try? SSEEvent.parse(eventName: normalized.name, data: normalized.data) else {
+                let event: SSEEvent
+                do {
+                    event = try SSEEvent.parse(eventName: normalized.name, data: normalized.data)
+                } catch {
+                    print("[SSEClient] Failed to parse event '\(normalized.name)': \(error)")
                     return
                 }
 
-                Task { @MainActor in
-                    onEvent(event)
-                }
+                // Yield into the serial stream instead of spawning a Task per event.
+                continuation.yield(event)
             },
-            onCommentCallback: { _ in },
+            onCommentCallback: { _ in
+                // Server heartbeat comments (e.g., `: keepalive`) count as activity.
+                activityTracker.touch()
+            },
             onErrorCallback: { error in
                 reconnectCounter.increment()
                 let attempt = reconnectCounter.value
@@ -154,11 +199,68 @@ final class SSEClient {
         }
 
         source.start()
+
+        // --- Heartbeat watchdog ---
+        startHeartbeatWatchdog()
     }
 
     func stop() {
+        heartbeatTask?.cancel()
+        heartbeatTask = nil
+        eventConsumerTask?.cancel()
+        eventConsumerTask = nil
+        eventContinuation?.finish()
+        eventContinuation = nil
         eventSource?.stop()
         eventSource = nil
+    }
+
+    /// Returns `true` if the connection has received activity recently.
+    /// Used by ConnectionManager for foreground-reconnection checks.
+    var isConnectionStale: Bool {
+        guard let last = lastActivityAt.value else { return true }
+        return Date().timeIntervalSince(last) > heartbeatTimeout
+    }
+
+    /// Force a reconnection cycle. Stops the current EventSource and restarts.
+    /// Called by the heartbeat watchdog and by ConnectionManager on app-foreground.
+    func reconnect() {
+        guard eventSource != nil else { return }
+        #if DEBUG
+        print("[SSEClient] Reconnecting (heartbeat/foreground)")
+        #endif
+        // Stop & restart the underlying EventSource.
+        // LDSwiftEventSource handles creating a new TCP connection.
+        eventSource?.stop()
+        eventSource?.start()
+        lastActivityAt.touch()
+    }
+
+    // MARK: - Heartbeat Watchdog
+
+    /// Periodically checks `lastActivityAt` and forces a reconnect if the connection
+    /// has been silent for longer than `heartbeatTimeout`.
+    private func startHeartbeatWatchdog() {
+        heartbeatTask?.cancel()
+        let timeout = heartbeatTimeout
+        let activityTracker = lastActivityAt
+        heartbeatTask = Task { [weak self] in
+            // Check every half the timeout interval for responsiveness.
+            let checkInterval = max(timeout / 2, 3.0)
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(checkInterval))
+                guard !Task.isCancelled else { break }
+                guard let last = activityTracker.value else { continue }
+                if Date().timeIntervalSince(last) > timeout {
+                    #if DEBUG
+                    print("[SSEClient] Heartbeat timeout — forcing reconnect")
+                    #endif
+                    await MainActor.run { [weak self] in
+                        self?.reconnect()
+                    }
+                }
+            }
+        }
     }
 
     // MARK: - Event Helpers
@@ -271,4 +373,18 @@ private final class Counter: @unchecked Sendable {
     func reset() { lock.withLock { _value = 0 } }
 
     func hasReached(_ limit: Int) -> Bool { lock.withLock { _value >= limit } }
+}
+
+// MARK: - AtomicDate
+
+/// Thread-safe mutable `Date?` for tracking the last SSE activity timestamp.
+/// Accessed from LDSwiftEventSource's internal DispatchQueue (writes) and
+/// MainActor (reads for heartbeat check).
+private final class AtomicDate: @unchecked Sendable {
+    private var _date: Date?
+    private let lock = NSLock()
+
+    var value: Date? { lock.withLock { _date } }
+
+    func touch() { lock.withLock { _date = Date() } }
 }

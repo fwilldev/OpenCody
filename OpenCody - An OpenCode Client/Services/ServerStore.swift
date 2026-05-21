@@ -61,7 +61,7 @@ private struct StoredServer: Codable {
     let id: UUID
     let name: String
     let hostname: String
-    let port: Int
+    let port: Int?
     let useHTTPS: Bool
     let username: String
     let keychainIdentifier: String

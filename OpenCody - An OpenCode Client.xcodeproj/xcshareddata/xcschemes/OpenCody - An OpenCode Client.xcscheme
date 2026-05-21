@@ -74,6 +74,9 @@
             ReferencedContainer = "container:OpenCody - An OpenCode Client.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
+      <StoreKitConfigurationFileReference
+         identifier = "../../OpenCody - An OpenCode Client/Products.storekit">
+      </StoreKitConfigurationFileReference>
    </LaunchAction>
    <ProfileAction
       buildConfiguration = "Release"

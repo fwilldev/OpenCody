@@ -39,14 +39,16 @@ struct EditServerView: View {
     private var urlPreview: String {
         let scheme = server.useHTTPS ? "https" : "http"
         let host = server.hostname.isEmpty ? "hostname" : server.hostname
-        let portValue = port.isEmpty ? "4096" : port
-        return "\(scheme)://\(host):\(portValue)"
+        if let portInt = Int(port), !port.isEmpty {
+            return "\(scheme)://\(host):\(portInt)"
+        }
+        return "\(scheme)://\(host)"
     }
 
     private var canSave: Bool {
         !server.name.trimmingCharacters(in: .whitespaces).isEmpty
             && !server.hostname.trimmingCharacters(in: .whitespaces).isEmpty
-            && (Int(port) ?? 0) > 0
+            && (port.isEmpty || (Int(port) != nil && (Int(port) ?? 0) > 0))
     }
 
     // MARK: - Body
@@ -75,7 +77,7 @@ struct EditServerView: View {
                 }
             }
             .onAppear {
-                port = String(server.port)
+                port = server.port.map { String($0) } ?? ""
                 password = (try? KeychainService.retrieve(for: server.keychainIdentifier)) ?? ""
             }
             .confirmationDialog(
@@ -133,9 +135,9 @@ struct EditServerView: View {
                 )
             }
 
-            fieldGroup(label: "Port") {
+            fieldGroup(label: "Port (optional)") {
                 GlassTextField(
-                    placeholder: "4096",
+                    placeholder: "Default",
                     text: $port,
                     keyboardType: .numberPad,
                     autocapitalization: .never
@@ -294,7 +296,7 @@ struct EditServerView: View {
     // MARK: - Actions
 
     private func testConnection() {
-        let portNumber = Int(port) ?? 4096
+        let portNumber = port.isEmpty ? nil : Int(port)
         let testServer = ServerConnection(
             name: server.name.isEmpty ? "Test" : server.name,
             hostname: server.hostname,
@@ -317,7 +319,7 @@ struct EditServerView: View {
     }
 
     private func saveChanges() {
-        server.port = Int(port) ?? 4096
+        server.port = port.isEmpty ? nil : Int(port)
         server.name = server.name.trimmingCharacters(in: .whitespaces)
         server.hostname = server.hostname.trimmingCharacters(in: .whitespaces)
         server.username = server.username.trimmingCharacters(in: .whitespaces)

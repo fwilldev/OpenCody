@@ -11,6 +11,7 @@ struct ChatView: View {
     let utilitiesState: iPadUtilitiesState?
     @State private var viewModel: ChatViewModel
     @State private var isAtBottom = true
+    @State private var scrollViewHeight: CGFloat = 0
     @FocusState private var isInputFocused: Bool
 
     init(
@@ -142,14 +143,31 @@ struct ChatView: View {
                         }
                         .padding(.horizontal, Theme.Spacing.md)
                         .padding(.vertical, Theme.Spacing.sm)
+                        // Track scroll position to detect when user scrolls away from bottom
+                        .onGeometryChange(for: CGFloat.self) { geo in
+                            geo.frame(in: .named("chatScroll")).maxY
+                        } action: { contentBottom in
+                            // Content bottom relative to scroll viewport.
+                            // When the bottom of the content is near the bottom of the viewport,
+                            // the user is "at bottom".  Allow generous slack (80pt) for rounding
+                            // and partial-pixel differences.
+                            isAtBottom = contentBottom < scrollViewHeight + 80
+                        }
                     }
+                    .coordinateSpace(name: "chatScroll")
+                    .onGeometryChange(for: CGFloat.self) { geo in
+                        geo.size.height
+                    } action: { height in
+                        scrollViewHeight = height
+                    }
+                    .defaultScrollAnchor(.bottom)
                     .scrollDismissesKeyboard(.interactively)
                     .onTapGesture {
                         isInputFocused = false
                     }
-                    .onChange(of: viewModel.displayMessages.count) { _, _ in
+                    .onChange(of: viewModel.scrollTrigger) { _, _ in
                         if isAtBottom {
-                            withAnimation(.easeOut(duration: 0.25)) {
+                            withAnimation(.easeOut(duration: 0.15)) {
                                 proxy.scrollTo("bottom", anchor: .bottom)
                             }
                         }

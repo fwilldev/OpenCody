@@ -23,29 +23,36 @@ struct QuestionAPI: Sendable {
     }
 
     /// Reply to a question request with answers.
-    func reply(requestID: String, answers: [QuestionAnswer], directory: String? = nil) async throws {
-        var queryItems: [URLQueryItem]?
-        if let directory {
-            queryItems = [URLQueryItem(name: "directory", value: directory)]
-        }
+    ///
+    /// The reference web UI does **not** pass `directory` for reply/reject calls,
+    /// so we omit it to match the canonical client behaviour.
+    func reply(requestID: String, answers: [QuestionAnswer]) async throws {
         let body = ReplyBody(answers: answers)
+        let encoded = try JSONEncoder().encode(body)
+        #if DEBUG
+        let bodyPreview = String(data: encoded, encoding: .utf8) ?? "<nil>"
+        print("[QuestionAPI] reply requestID=\(requestID) body=\(bodyPreview)")
+        #endif
         let endpoint = APIEndpoint(
             path: "/question/\(requestID)/reply",
             method: .POST,
-            body: try JSONEncoder().encode(body),
-            queryItems: queryItems
+            body: encoded
         )
         try await client.requestVoid(endpoint)
     }
 
     /// Reject a question request.
-    func reject(requestID: String, directory: String? = nil) async throws {
-        let queryItems = directory.map { [URLQueryItem(name: "directory", value: $0)] }
+    ///
+    /// The reference web UI does **not** pass `directory` for reply/reject calls,
+    /// so we omit it to match the canonical client behaviour.
+    func reject(requestID: String) async throws {
+        #if DEBUG
+        print("[QuestionAPI] reject requestID=\(requestID)")
+        #endif
         let endpoint = APIEndpoint(
             path: "/question/\(requestID)/reject",
             method: .POST,
-            body: nil,
-            queryItems: queryItems
+            body: nil
         )
         try await client.requestVoid(endpoint)
     }

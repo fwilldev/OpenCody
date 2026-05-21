@@ -109,6 +109,19 @@ final class EventService {
         }
     }
 
+    /// Whether the SSE connection has been silent longer than the heartbeat timeout.
+    /// Used by ConnectionManager to decide whether to force-reconnect on app foreground.
+    var isConnectionStale: Bool {
+        sseClient?.isConnectionStale ?? true
+    }
+
+    /// Force a reconnect of the underlying SSE connection.
+    /// Called by ConnectionManager on app-foreground when the connection is stale.
+    func reconnectIfStale() {
+        guard let client = sseClient, client.isConnectionStale else { return }
+        client.reconnect()
+    }
+
     // MARK: - Private
 
     /// Maps `SSEClientState` to our published `ConnectionState`.

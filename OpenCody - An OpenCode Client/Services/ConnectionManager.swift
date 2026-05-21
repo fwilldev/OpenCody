@@ -317,13 +317,15 @@ final class ConnectionManager {
 
     /// Handle app lifecycle changes.
     ///
-    /// On `.active`: triggers a foreground refresh so ViewModels can reload REST data.
+    /// On `.active`: checks for stale SSE connections and forces a reconnect if needed,
+    /// then triggers a foreground refresh so ViewModels can reload REST data.
     /// On `.background`: no action needed (SSE auto-reconnects).
     ///
     /// - Parameter phase: The new `ScenePhase`.
     func handleScenePhaseChange(_ phase: ScenePhase) {
         switch phase {
         case .active:
+            reconnectStaleConnections()
             refetchOnForeground()
         case .background, .inactive:
             break
@@ -346,6 +348,15 @@ final class ConnectionManager {
     private func refetchOnForeground() {
         for handler in refreshSubscribers.values {
             handler()
+        }
+    }
+
+    /// Checks all active connections for stale SSE streams and forces reconnection.
+    /// Called on app-foreground to detect silently-dropped connections (e.g., after
+    /// the device was sleeping or the network changed while backgrounded).
+    private func reconnectStaleConnections() {
+        for (_, connection) in connections {
+            connection.eventService.reconnectIfStale()
         }
     }
 }

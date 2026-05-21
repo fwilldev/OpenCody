@@ -198,18 +198,67 @@ private struct EventPayload<T: Decodable>: Decodable {
 struct SessionInfoPayload: Codable, Sendable {
     let info: Session
 }
-struct SessionStatusPayload: Codable, Sendable {
+struct SessionStatusPayload: Decodable, Sendable {
     let sessionID: String
     let status: SessionStatus
+
+    private enum CodingKeys: String, CodingKey {
+        case sessionID
+        case sessionIDCamel = "sessionId"
+        case sessionIDSnake = "session_id"
+        case status
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        sessionID =
+            (try? container.decodeIfPresent(String.self, forKey: .sessionID))
+            ?? (try? container.decodeIfPresent(String.self, forKey: .sessionIDCamel))
+            ?? (try? container.decodeIfPresent(String.self, forKey: .sessionIDSnake))
+            ?? ""
+        status = try container.decode(SessionStatus.self, forKey: .status)
+    }
 }
 
-struct SessionIDPayload: Codable, Sendable {
+struct SessionIDPayload: Decodable, Sendable {
     let sessionID: String
+
+    private enum CodingKeys: String, CodingKey {
+        case sessionID
+        case sessionIDCamel = "sessionId"
+        case sessionIDSnake = "session_id"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        sessionID =
+            (try? container.decodeIfPresent(String.self, forKey: .sessionID))
+            ?? (try? container.decodeIfPresent(String.self, forKey: .sessionIDCamel))
+            ?? (try? container.decodeIfPresent(String.self, forKey: .sessionIDSnake))
+            ?? ""
+    }
 }
 
-struct SessionDiffPayload: Codable, Sendable {
+struct SessionDiffPayload: Decodable, Sendable {
     let sessionID: String
     let diff: [FileDiff]
+
+    private enum CodingKeys: String, CodingKey {
+        case sessionID
+        case sessionIDCamel = "sessionId"
+        case sessionIDSnake = "session_id"
+        case diff
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        sessionID =
+            (try? container.decodeIfPresent(String.self, forKey: .sessionID))
+            ?? (try? container.decodeIfPresent(String.self, forKey: .sessionIDCamel))
+            ?? (try? container.decodeIfPresent(String.self, forKey: .sessionIDSnake))
+            ?? ""
+        diff = (try? container.decodeIfPresent([FileDiff].self, forKey: .diff)) ?? []
+    }
 }
 
 struct SessionErrorPayload: Codable, Sendable {
@@ -221,9 +270,32 @@ struct MessageInfoPayload: Codable, Sendable {
     let info: Message
 }
 
-struct MessageRemovedPayload: Codable, Sendable {
+struct MessageRemovedPayload: Decodable, Sendable {
     let sessionID: String
     let messageID: String
+
+    private enum CodingKeys: String, CodingKey {
+        case sessionID
+        case sessionIDCamel = "sessionId"
+        case sessionIDSnake = "session_id"
+        case messageID
+        case messageIDCamel = "messageId"
+        case messageIDSnake = "message_id"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        sessionID =
+            (try? container.decodeIfPresent(String.self, forKey: .sessionID))
+            ?? (try? container.decodeIfPresent(String.self, forKey: .sessionIDCamel))
+            ?? (try? container.decodeIfPresent(String.self, forKey: .sessionIDSnake))
+            ?? ""
+        messageID =
+            (try? container.decodeIfPresent(String.self, forKey: .messageID))
+            ?? (try? container.decodeIfPresent(String.self, forKey: .messageIDCamel))
+            ?? (try? container.decodeIfPresent(String.self, forKey: .messageIDSnake))
+            ?? ""
+    }
 }
 
 struct PartUpdatePayload: Codable, Sendable {
@@ -231,24 +303,123 @@ struct PartUpdatePayload: Codable, Sendable {
     let delta: String?
 }
 
-struct PartRemovePayload: Codable, Sendable {
+struct PartRemovePayload: Decodable, Sendable {
     let sessionID: String
     let messageID: String
     let partID: String
+
+    private enum CodingKeys: String, CodingKey {
+        case sessionID
+        case sessionIDCamel = "sessionId"
+        case sessionIDSnake = "session_id"
+        case messageID
+        case messageIDCamel = "messageId"
+        case messageIDSnake = "message_id"
+        case partID
+        case partIDCamel = "partId"
+        case partIDSnake = "part_id"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        sessionID =
+            (try? container.decodeIfPresent(String.self, forKey: .sessionID))
+            ?? (try? container.decodeIfPresent(String.self, forKey: .sessionIDCamel))
+            ?? (try? container.decodeIfPresent(String.self, forKey: .sessionIDSnake))
+            ?? ""
+        messageID =
+            (try? container.decodeIfPresent(String.self, forKey: .messageID))
+            ?? (try? container.decodeIfPresent(String.self, forKey: .messageIDCamel))
+            ?? (try? container.decodeIfPresent(String.self, forKey: .messageIDSnake))
+            ?? ""
+        partID =
+            (try? container.decodeIfPresent(String.self, forKey: .partID))
+            ?? (try? container.decodeIfPresent(String.self, forKey: .partIDCamel))
+            ?? (try? container.decodeIfPresent(String.self, forKey: .partIDSnake))
+            ?? ""
+    }
 }
 
-struct PartDeltaPayload: Codable, Sendable {
+struct PartDeltaPayload: Decodable, Sendable {
     let sessionID: String
     let messageID: String
     let partID: String
     let field: String
     let delta: String
+
+    private enum CodingKeys: String, CodingKey {
+        case sessionID
+        case sessionIDCamel = "sessionId"
+        case sessionIDSnake = "session_id"
+        case messageID
+        case messageIDCamel = "messageId"
+        case messageIDSnake = "message_id"
+        case partID
+        case partIDCamel = "partId"
+        case partIDSnake = "part_id"
+        case field
+        case delta
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        sessionID =
+            (try? container.decodeIfPresent(String.self, forKey: .sessionID))
+            ?? (try? container.decodeIfPresent(String.self, forKey: .sessionIDCamel))
+            ?? (try? container.decodeIfPresent(String.self, forKey: .sessionIDSnake))
+            ?? ""
+        messageID =
+            (try? container.decodeIfPresent(String.self, forKey: .messageID))
+            ?? (try? container.decodeIfPresent(String.self, forKey: .messageIDCamel))
+            ?? (try? container.decodeIfPresent(String.self, forKey: .messageIDSnake))
+            ?? ""
+        partID =
+            (try? container.decodeIfPresent(String.self, forKey: .partID))
+            ?? (try? container.decodeIfPresent(String.self, forKey: .partIDCamel))
+            ?? (try? container.decodeIfPresent(String.self, forKey: .partIDSnake))
+            ?? ""
+        field = (try? container.decodeIfPresent(String.self, forKey: .field)) ?? ""
+        delta = (try? container.decodeIfPresent(String.self, forKey: .delta)) ?? ""
+    }
+
+    init(sessionID: String, messageID: String, partID: String, field: String, delta: String) {
+        self.sessionID = sessionID
+        self.messageID = messageID
+        self.partID = partID
+        self.field = field
+        self.delta = delta
+    }
 }
 
-struct PermissionRepliedPayload: Codable, Sendable {
+struct PermissionRepliedPayload: Decodable, Sendable {
     let sessionID: String
     let permissionID: String
     let response: String
+
+    private enum CodingKeys: String, CodingKey {
+        case sessionID
+        case sessionIDCamel = "sessionId"
+        case sessionIDSnake = "session_id"
+        case permissionID
+        case permissionIDCamel = "permissionId"
+        case permissionIDSnake = "permission_id"
+        case response
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        sessionID =
+            (try? container.decodeIfPresent(String.self, forKey: .sessionID))
+            ?? (try? container.decodeIfPresent(String.self, forKey: .sessionIDCamel))
+            ?? (try? container.decodeIfPresent(String.self, forKey: .sessionIDSnake))
+            ?? ""
+        permissionID =
+            (try? container.decodeIfPresent(String.self, forKey: .permissionID))
+            ?? (try? container.decodeIfPresent(String.self, forKey: .permissionIDCamel))
+            ?? (try? container.decodeIfPresent(String.self, forKey: .permissionIDSnake))
+            ?? ""
+        response = (try? container.decodeIfPresent(String.self, forKey: .response)) ?? ""
+    }
 }
 
 struct TodoUpdatePayload: Codable, Sendable {

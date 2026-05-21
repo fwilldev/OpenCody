@@ -51,6 +51,13 @@ struct RootView: View {
         .task {
             serverStore.load()
 
+            // Record app launch for tip prompt eligibility tracking.
+            TipPromptService.shared.recordAppLaunch()
+
+            // Verify has-tipped state against StoreKit transaction history
+            // so reinstalls don't re-prompt users who already supported.
+            await TipPromptService.shared.refreshHasTippedFromStoreKit()
+
             // Start notification observation
             let manager = SessionNotificationManager(
                 connectionManager: connectionManager,
