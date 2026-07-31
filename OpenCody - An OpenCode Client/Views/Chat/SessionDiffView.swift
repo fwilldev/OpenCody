@@ -81,20 +81,23 @@ struct SessionDiffView: View {
         self.showsCloseButton = showsCloseButton
     }
 
+    /// Load the session's changes.
+    ///
+    /// Built from `UserMessage.summary.diffs` rather than `GET /session/{id}/diff`:
+    /// that endpoint returns `[]` unless a `messageID` is supplied and has no
+    /// whole-session mode, so it cannot answer "what did this session change".
+    /// See `SessionChangeSet` for the details.
     private func loadDiff() async {
         isLoading = true
         error = nil
         do {
-            let api = SessionAPI(client: apiClient)
+            let api = MessageAPI(client: apiClient, directory: session.directory)
+            let responses = try await api.list(sessionID: session.id)
+            let changeSet = SessionChangeSet(messages: responses.map { $0.toModel() })
+            diffs = changeSet.files
             #if DEBUG
-            print("[SessionDiffView] loading diff for session=\(session.id)")
-            #endif
-            diffs = try await api.diff(id: session.id)
-            #if DEBUG
-            print("[SessionDiffView] loaded \(diffs.count) diffs")
-            for d in diffs {
-                print("[SessionDiffView]   file=\(d.file) status=\(d.status) +\(d.additions) -\(d.deletions)")
-            }
+            print("[SessionDiffView] session=\(session.id) messages=\(responses.count) "
+                + "files=\(changeSet.fileCount) +\(changeSet.additions) -\(changeSet.deletions)")
             #endif
         } catch {
             #if DEBUG
@@ -159,7 +162,7 @@ private struct FileDiffSection: View {
             }
 
             Divider()
-                .overlay(Color.white.opacity(0.06))
+                .overlay(Theme.Colors.hairline)
         }
     }
 }
@@ -169,49 +172,78 @@ private struct FileDiffSection: View {
 private struct DiffContentView: View {
     let diff: FileDiff
 
-    // Build unified diff line annotations by comparing before/after
-    private var diffLines: [(line: String, kind: DiffLineKind)] {
-        switch diff.status {
-        case .added:
-            // Entire file is new — show all lines as added
-            return diff.after.components(separatedBy: "\n").map { line in ("+  " + line, DiffLineKind.added) }
-        case .deleted:
-            // Entire file was removed — show all lines as removed
-            return diff.before.components(separatedBy: "\n").map { line in ("-  " + line, DiffLineKind.removed) }
-        case .modified:
-            return buildModifiedDiff()
-        }
-    }
-
-    private func buildModifiedDiff() -> [(String, DiffLineKind)] {
-        let beforeLines = diff.before.components(separatedBy: "\n")
-        let afterLines = diff.after.components(separatedBy: "\n")
-        let beforeSet = Set(beforeLines)
-        let afterSet = Set(afterLines)
-
-        var result: [(String, DiffLineKind)] = []
-        for line in beforeLines where !afterSet.contains(line) {
-            result.append(("-  " + line, DiffLineKind.removed))
-        }
-        for line in afterLines where !beforeSet.contains(line) {
-            result.append(("+  " + line, DiffLineKind.added))
-        }
-        return result
-    }
+    /// Renderable lines parsed from the server's unified-diff patch.
+    private var lines: [UnifiedDiff.Line] { diff.parsedDiff.lines }
 
     var body: some View {
-        LazyVStack(alignment: .leading, spacing: 0) {
-            ForEach(Array(diffLines.enumerated()), id: \.offset) { _, item in
-                Text(item.line)
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(item.kind.textColor)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, Theme.Spacing.md)
-                    .padding(.vertical, 1)
-                    .background(item.kind.backgroundColor)
+        if lines.isEmpty {
+            // No patch text — e.g. a binary file or a summary-only diff entry.
+            Text(
+                diff.additions + diff.deletions > 0
+                    ? "\(diff.additions + diff.deletions) changed lines — no preview available"
+                    : "No textual changes"
+            )
+            .font(.system(size: 11, design: .monospaced))
+            .foregroundStyle(Theme.Colors.smoke)
+            .padding(Theme.Spacing.md)
+        } else {
+            LazyVStack(alignment: .leading, spacing: 0) {
+                ForEach(lines) { line in
+                    DiffLineRow(line: line)
+                }
             }
+            .background(Theme.Colors.carbon)
         }
-        .background(Theme.Colors.carbon)
+    }
+}
+
+// MARK: - DiffLineRow
+
+private struct DiffLineRow: View {
+    let line: UnifiedDiff.Line
+
+    var body: some View {
+        HStack(alignment: .top, spacing: Theme.Spacing.sm) {
+            Text(gutter)
+                .font(.system(size: 10, design: .monospaced))
+                .foregroundStyle(Theme.Colors.smoke)
+                .frame(width: 34, alignment: .trailing)
+
+            Text(marker + line.text)
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundStyle(kind.textColor)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .textSelection(.enabled)
+        }
+        .padding(.horizontal, Theme.Spacing.md)
+        .padding(.vertical, 1)
+        .background(kind.backgroundColor)
+    }
+
+    /// Line number shown in the gutter — new-file number, falling back to the old one.
+    private var gutter: String {
+        if line.kind == .header { return "" }
+        if let n = line.newLineNumber { return String(n) }
+        if let o = line.oldLineNumber { return String(o) }
+        return ""
+    }
+
+    private var marker: String {
+        switch line.kind {
+        case .added: return "+ "
+        case .removed: return "- "
+        case .context: return "  "
+        case .header: return ""
+        }
+    }
+
+    private var kind: DiffLineKind {
+        switch line.kind {
+        case .added: return .added
+        case .removed: return .removed
+        case .context: return .context
+        case .header: return .header
+        }
     }
 }
 
@@ -228,13 +260,14 @@ extension FileDiffStatus {
 }
 
 private enum DiffLineKind {
-    case added, removed, context
+    case added, removed, context, header
 
     var textColor: Color {
         switch self {
         case .added: return Theme.Colors.neonGreen
         case .removed: return Theme.Colors.hotPink
         case .context: return Theme.Colors.silver
+        case .header: return Theme.Colors.cyberBlue
         }
     }
 
@@ -243,6 +276,7 @@ private enum DiffLineKind {
         case .added: return Theme.Colors.neonGreen.opacity(0.07)
         case .removed: return Theme.Colors.hotPink.opacity(0.07)
         case .context: return Color.clear
+        case .header: return Theme.Colors.cyberBlue.opacity(0.08)
         }
     }
 }

@@ -75,8 +75,22 @@ enum ChangedFileStatus: String, Codable, Sendable {
 
 // MARK: - VcsInfo
 
+/// Version-control information for a project. Maps to `VcsInfo`.
+///
+/// Both fields are optional — a directory that is not a git repository returns
+/// an empty object.
 struct VcsInfo: Codable, Sendable {
-    let branch: String
+    let branch: String?
+    /// The repository's default branch (e.g. `main`), used as the base for branch diffs.
+    let defaultBranch: String?
+
+    /// Whether the project is under version control at all.
+    var isRepository: Bool { branch != nil }
+
+    enum CodingKeys: String, CodingKey {
+        case branch
+        case defaultBranch = "default_branch"
+    }
 }
 
 // MARK: - Path
@@ -92,18 +106,61 @@ struct PathInfo: Codable, Sendable {
 
 // MARK: - Project
 
-/// Maps to `Project` in types.gen.ts
-/// Maps to `Project` in types.gen.ts
-    struct Project: Codable, Identifiable, Sendable {
+/// A project opened with opencode. Maps to `Project`.
+struct Project: Codable, Identifiable, Sendable {
     let id: String
+    /// Absolute path of the project's primary worktree.
     let worktree: String
+    /// `"git"` when the project is a git repository, `nil` otherwise.
     let vcs: String?
+    /// User-assigned display name.
+    let name: String?
+    let icon: ProjectIcon?
+    let commands: ProjectCommands?
     let time: ProjectTime
+    /// Directories of sandbox worktrees created for this project.
+    let sandboxes: [String]?
+
+    /// Name for display — the assigned name, else the worktree's last path component.
+    var displayName: String {
+        if let name, !name.isEmpty { return name }
+        return (worktree as NSString).lastPathComponent
+    }
+
+    /// Whether the project is a git repository.
+    var isGitRepository: Bool { vcs == "git" }
+}
+
+/// Project icon override. Maps to `Project.icon`.
+struct ProjectIcon: Codable, Sendable {
+    let url: String?
+    /// An SF Symbol / emoji override chosen by the user instead of a fetched icon.
+    let override: String?
+    /// Hex tint colour.
+    let color: String?
+
+    init(url: String? = nil, override: String? = nil, color: String? = nil) {
+        self.url = url
+        self.override = override
+        self.color = color
+    }
+}
+
+/// Project-level scripts. Maps to `Project.commands`.
+struct ProjectCommands: Codable, Sendable {
+    /// Startup script run when creating a new workspace (worktree).
+    let start: String?
+
+    init(start: String? = nil) {
+        self.start = start
+    }
 }
 
 struct ProjectTime: Codable, Sendable {
     let created: Double
     let updated: Double?
+    /// Set once opencode has run its project initialization.
+    let initialized: Double?
 }
 
 // MARK: - Symbol

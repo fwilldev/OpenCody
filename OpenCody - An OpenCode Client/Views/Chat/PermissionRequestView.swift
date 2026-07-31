@@ -9,8 +9,8 @@ import SwiftUI
 /// Replaces the inline overlay in ChatView — to be shown as a `.sheet(item:)`.
 struct PermissionRequestView: View {
     let permission: Permission
-    let onAllow: () -> Void
-    let onDeny: () -> Void
+    /// Called with the chosen decision — `.once`, `.always`, or `.reject`.
+    let onDecision: (PermissionReplyDecision) -> Void
 
     @Environment(\.dismiss) private var dismiss
 
@@ -44,35 +44,29 @@ struct PermissionRequestView: View {
 
                     // Tool details card
                     VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-                        Label("Tool", systemImage: "wrench.and.screwdriver")
+                        Label("Permission", systemImage: "wrench.and.screwdriver")
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(Theme.Colors.silver)
 
-                        Text(permission.id)
+                        Text(permission.displayTitle)
                             .font(.system(.body, design: .monospaced))
                             .foregroundStyle(Theme.Colors.cyberBlue)
 
-                        if case .single(let pat) = permission.pattern {
-                            Divider().overlay(Color.white.opacity(0.08))
-                            Label("Pattern", systemImage: "text.magnifyingglass")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(Theme.Colors.silver)
-                            Text(pat)
-                                .font(.system(.caption, design: .monospaced))
-                                .foregroundStyle(Theme.Colors.cloud)
-                                .padding(8)
-                                .background(Theme.Colors.graphite)
-                                .clipShape(RoundedRectangle(cornerRadius: 8))
-                        } else if case .multiple(let pats) = permission.pattern {
-                            Divider().overlay(Color.white.opacity(0.08))
-                            Label("Patterns", systemImage: "text.magnifyingglass")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(Theme.Colors.silver)
+                        if !permission.patterns.isEmpty {
+                            Divider().overlay(Theme.Colors.border)
+                            Label(
+                                permission.patterns.count == 1 ? "Target" : "Targets",
+                                systemImage: "text.magnifyingglass"
+                            )
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(Theme.Colors.silver)
+
                             VStack(alignment: .leading, spacing: 4) {
-                                ForEach(pats, id: \.self) { pat in
-                                    Text("• " + pat)
+                                ForEach(permission.patterns, id: \.self) { pat in
+                                    Text(permission.patterns.count == 1 ? pat : "• " + pat)
                                         .font(.system(.caption, design: .monospaced))
                                         .foregroundStyle(Theme.Colors.cloud)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
                                 }
                             }
                             .padding(8)
@@ -84,8 +78,8 @@ struct PermissionRequestView: View {
                     .background(
                         RoundedRectangle(cornerRadius: 16)
                             .fill(.ultraThinMaterial)
-                            .overlay(RoundedRectangle(cornerRadius: 16).fill(Color.black.opacity(0.3)))
-                            .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.08), lineWidth: 1))
+                            .overlay(RoundedRectangle(cornerRadius: 16).fill(Theme.Colors.glassFill))
+                            .overlay(RoundedRectangle(cornerRadius: 16).stroke(Theme.Colors.border, lineWidth: 1))
                     )
 
                     // Warning note
@@ -103,12 +97,12 @@ struct PermissionRequestView: View {
                     // Action buttons
                     VStack(spacing: Theme.Spacing.sm) {
                         Button {
-                            onAllow()
+                            onDecision(.once)
                             dismiss()
                         } label: {
                             HStack {
                                 Image(systemName: "checkmark.circle")
-                                Text("Allow")
+                                Text("Allow Once")
                                     .fontWeight(.semibold)
                             }
                             .foregroundStyle(Theme.Colors.cyberBlue)
@@ -121,8 +115,29 @@ struct PermissionRequestView: View {
                             )
                         }
 
+                        if permission.supportsAlways {
+                            Button {
+                                onDecision(.always)
+                                dismiss()
+                            } label: {
+                                HStack {
+                                    Image(systemName: "checkmark.circle.badge.checkmark")
+                                    Text("Always Allow")
+                                        .fontWeight(.semibold)
+                                }
+                                .foregroundStyle(Theme.Colors.cloud)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 14)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 12)
+                                        .fill(Theme.Colors.fillMuted)
+                                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.Colors.borderStrong, lineWidth: 1))
+                                )
+                            }
+                        }
+
                         Button {
-                            onDeny()
+                            onDecision(.reject)
                             dismiss()
                         } label: {
                             HStack {
@@ -148,7 +163,7 @@ struct PermissionRequestView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") {
-                        onDeny()
+                        onDecision(.reject)
                         dismiss()
                     }
                     .foregroundStyle(Theme.Colors.silver)

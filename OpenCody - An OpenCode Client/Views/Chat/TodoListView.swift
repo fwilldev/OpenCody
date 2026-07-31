@@ -113,7 +113,7 @@ struct TodoListView: View {
         isLoading = true
         error = nil
         do {
-            let api = SessionAPI(client: apiClient)
+            let api = SessionAPI(client: apiClient, directory: session.directory)
             todos = try await api.todos(id: session.id)
         } catch {
             self.error = error.localizedDescription

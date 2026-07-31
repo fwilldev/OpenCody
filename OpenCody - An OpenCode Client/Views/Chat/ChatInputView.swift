@@ -18,6 +18,8 @@ struct ChatInputView: View {
     @State private var showAttachmentPicker = false
     @State private var attachmentManager = AttachmentManager()
     @State private var isShellMode = false
+    /// Bumped on every send to drive haptic feedback and the send-button bounce.
+    @State private var sendPulse = 0
 
     init(viewModel: ChatViewModel, apiClient: APIClient? = nil, isInputFocused: FocusState<Bool>.Binding) {
         self.viewModel = viewModel
@@ -166,7 +168,7 @@ struct ChatInputView: View {
                             .fill(.ultraThinMaterial)
                             .overlay(
                                 RoundedRectangle(cornerRadius: 12)
-                                    .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                                    .stroke(Theme.Colors.border, lineWidth: 1)
                             )
                     )
 
@@ -187,6 +189,7 @@ struct ChatInputView: View {
                     Button {
                         let toSend = text.trimmingCharacters(in: .whitespacesAndNewlines)
                         let attachments = attachmentManager.attachments
+                        sendPulse += 1
                         text = ""
                         showCommandPalette = false
                         showFileMentionPalette = false
@@ -227,8 +230,12 @@ struct ChatInputView: View {
                             .foregroundStyle(canSend ? Theme.Colors.cyberBlue : Theme.Colors.smoke)
                             .font(.title3)
                             .frame(width: 32, height: 32)
+                            .scaleEffect(canSend ? 1.0 : 0.88)
+                            .symbolEffect(.bounce, value: sendPulse)
+                            .animation(.spring(response: 0.28, dampingFraction: 0.6), value: canSend)
                     }
                     .disabled(!canSend)
+                    .sensoryFeedback(.impact(weight: .light), trigger: sendPulse)
                 }
                 .padding(.horizontal, Theme.Spacing.md)
                 .padding(.vertical, Theme.Spacing.sm)

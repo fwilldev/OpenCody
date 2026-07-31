@@ -176,7 +176,7 @@ struct SessionActionsMenu: View {
 
     private func forkSession() async {
         do {
-            let api = SessionAPI(client: apiClient)
+            let api = SessionAPI(client: apiClient, directory: session.directory)
             let forked = try await api.fork(id: session.id)
             await MainActor.run {
                 forkedSessionID = forked.id
@@ -196,7 +196,7 @@ struct SessionActionsMenu: View {
         isSummarizing = true
         defer { isSummarizing = false }
         do {
-            let api = SessionAPI(client: apiClient)
+            let api = SessionAPI(client: apiClient, directory: session.directory)
             _ = try await api.summarize(id: session.id, providerID: providerID, modelID: modelID)
             await MainActor.run {
                 showSummary = true
@@ -212,7 +212,7 @@ struct SessionActionsMenu: View {
             return
         }
         do {
-            let api = SessionAPI(client: apiClient)
+            let api = SessionAPI(client: apiClient, directory: session.directory)
             _ = try await api.revert(id: session.id, messageID: lastMessage.message.id)
             await MainActor.run {
                 successMessage = "Session reverted successfully."
@@ -224,7 +224,7 @@ struct SessionActionsMenu: View {
 
     private func unrevertSession() async {
         do {
-            let api = SessionAPI(client: apiClient)
+            let api = SessionAPI(client: apiClient, directory: session.directory)
             _ = try await api.unrevert(id: session.id)
             await MainActor.run {
                 successMessage = "Revert undone successfully."
@@ -236,7 +236,7 @@ struct SessionActionsMenu: View {
 
     private func shareSession() async {
         do {
-            let api = SessionAPI(client: apiClient)
+            let api = SessionAPI(client: apiClient, directory: session.directory)
             let updated = try await api.share(id: session.id)
             guard let urlString = updated.share?.url else {
                 actionError = "Share failed: no URL returned."
@@ -263,7 +263,7 @@ struct SessionActionsMenu: View {
 
     private func unshareSession() async {
         do {
-            let api = SessionAPI(client: apiClient)
+            let api = SessionAPI(client: apiClient, directory: session.directory)
             try await api.unshare(id: session.id)
             await MainActor.run {
                 successMessage = "Session unshared."

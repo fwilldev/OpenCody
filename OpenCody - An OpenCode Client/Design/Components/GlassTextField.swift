@@ -22,9 +22,9 @@ struct GlassTextField: View {
         .padding(.horizontal, Theme.Spacing.md)
         .padding(.vertical, Theme.Spacing.sm + 2)
         .background(.ultraThinMaterial)
-        .background(Color.black.opacity(0.3))
+        .background(Theme.Colors.glassFill)
         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.small))
-        .overlay(RoundedRectangle(cornerRadius: Theme.Radius.small).stroke(Color.white.opacity(Theme.Glass.borderOpacity), lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: Theme.Radius.small).stroke(Theme.Colors.border, lineWidth: 1))
         .tint(Theme.Colors.cyberBlue)
     }
 }

@@ -132,7 +132,7 @@ struct FileExplorerView: View {
                     .buttonStyle(.plain)
 
                     Divider()
-                        .overlay(Color.white.opacity(0.06))
+                        .overlay(Theme.Colors.hairline)
                 }
             }
         }
@@ -301,7 +301,7 @@ private struct FileNodeRow: View {
         case "ts", "tsx":
             return Theme.Colors.cyberBlue
         case "js", "jsx":
-            return Color(hex: "F7DF1E")
+            return Theme.Colors.javascriptYellow
         case "json", "yaml", "yml", "toml", "xml", "plist":
             return Theme.Colors.electricPurple
         case "md", "txt":

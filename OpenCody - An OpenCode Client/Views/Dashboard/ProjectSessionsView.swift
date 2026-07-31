@@ -63,49 +63,7 @@ struct ProjectSessionsView: View {
                 ScrollView {
                     LazyVStack(spacing: Theme.Spacing.sm) {
                         ForEach(visibleSessions) { session in
-                            NavigationLink(destination: chatDestination(for: session)) {
-                                SessionCardView(
-                                    session: session,
-                                    status: localStatusMap[session.id]
-                                )
-                            }
-                            .buttonStyle(.plain)
-                            .contextMenu {
-                                if session.time.archived != nil {
-                                    Button {
-                                        Task {
-                                            try? await viewModel.unarchiveSession(id: session.id)
-                                            if let idx = projectSessions.firstIndex(where: { $0.id == session.id }),
-                                               let updated = viewModel.sessions.first(where: { $0.id == session.id }) {
-                                                projectSessions[idx] = updated
-                                            }
-                                        }
-                                    } label: {
-                                        Label("Unarchive", systemImage: "tray.and.arrow.up")
-                                    }
-                                } else {
-                                    Button {
-                                        Task {
-                                            try? await viewModel.archiveSession(id: session.id)
-                                            if let idx = projectSessions.firstIndex(where: { $0.id == session.id }),
-                                               let updated = viewModel.sessions.first(where: { $0.id == session.id }) {
-                                                projectSessions[idx] = updated
-                                            }
-                                        }
-                                    } label: {
-                                        Label("Archive", systemImage: "archivebox")
-                                    }
-                                }
-
-                                Button(role: .destructive) {
-                                    Task {
-                                        try? await viewModel.deleteSession(id: session.id)
-                                        projectSessions.removeAll { $0.id == session.id }
-                                    }
-                                } label: {
-                                    Label("Delete", systemImage: "trash")
-                                }
-                            }
+                            sessionRow(session)
                         }
 
                         // Show More button
@@ -215,9 +173,9 @@ struct ProjectSessionsView: View {
         loadError = nil
 
         do {
-            let api = SessionAPI(client: client)
+            let api = SessionAPI(client: client, directory: directory)
             // Fetch one extra to detect if there are more sessions beyond the display limit.
-            let fetched = try await api.list(directory: directory, roots: true, limit: displayLimit + 1)
+            let fetched = try await api.list(roots: true, limit: displayLimit + 1)
             hasMore = fetched.count > displayLimit
             let limited = hasMore ? Array(fetched.prefix(displayLimit)) : fetched
             projectSessions = limited.sorted { $0.time.updated > $1.time.updated }
@@ -303,6 +261,59 @@ struct ProjectSessionsView: View {
 
         default:
             break
+        }
+    }
+
+    /// One session row: the card, its navigation link, and its context menu.
+    ///
+    /// Extracted from `body` because inlining it pushed the enclosing expression
+    /// past the type-checker's time limit.
+    @ViewBuilder
+    private func sessionRow(_ session: Session) -> some View {
+        NavigationLink(destination: chatDestination(for: session)) {
+            SessionCardView(
+                session: session,
+                status: localStatusMap[session.id],
+                connectionManager: connectionManager
+            )
+        }
+        .buttonStyle(.plain)
+        .contextMenu {
+            if session.time.archived != nil {
+                Button {
+                    Task { await setArchived(session, archived: false) }
+                } label: {
+                    Label("Unarchive", systemImage: "tray.and.arrow.up")
+                }
+            } else {
+                Button {
+                    Task { await setArchived(session, archived: true) }
+                } label: {
+                    Label("Archive", systemImage: "archivebox")
+                }
+            }
+
+            Button(role: .destructive) {
+                Task {
+                    try? await viewModel.deleteSession(id: session.id)
+                    projectSessions.removeAll { $0.id == session.id }
+                }
+            } label: {
+                Label("Delete", systemImage: "trash")
+            }
+        }
+    }
+
+    /// Archive or unarchive a session, mirroring the result back into the local list.
+    private func setArchived(_ session: Session, archived: Bool) async {
+        if archived {
+            try? await viewModel.archiveSession(id: session.id)
+        } else {
+            try? await viewModel.unarchiveSession(id: session.id)
+        }
+        if let index = projectSessions.firstIndex(where: { $0.id == session.id }),
+           let updated = viewModel.sessions.first(where: { $0.id == session.id }) {
+            projectSessions[index] = updated
         }
     }
 

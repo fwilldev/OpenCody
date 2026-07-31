@@ -109,8 +109,8 @@ struct ContextUsageView: View {
         .background(
             RoundedRectangle(cornerRadius: Theme.Radius.card)
                 .fill(.ultraThinMaterial)
-                .overlay(RoundedRectangle(cornerRadius: Theme.Radius.card).fill(Color.black.opacity(Theme.Glass.overlayOpacity)))
-                .overlay(RoundedRectangle(cornerRadius: Theme.Radius.card).stroke(Color.white.opacity(Theme.Glass.borderOpacity), lineWidth: Theme.Glass.borderWidth))
+                .overlay(RoundedRectangle(cornerRadius: Theme.Radius.card).fill(Theme.Colors.glassFill))
+                .overlay(RoundedRectangle(cornerRadius: Theme.Radius.card).stroke(Theme.Colors.border, lineWidth: Theme.Glass.borderWidth))
         )
     }
 

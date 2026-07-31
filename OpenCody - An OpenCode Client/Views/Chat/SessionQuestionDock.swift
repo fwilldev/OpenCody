@@ -30,7 +30,7 @@ struct SessionQuestionDock: View {
     var body: some View {
         ZStack {
             // Dimmed background
-            Color.black.opacity(0.6)
+            Theme.Colors.scrim
                 .ignoresSafeArea()
                 .onTapGesture {
                     // Dismiss keyboard only — do NOT reject
@@ -66,9 +66,9 @@ struct SessionQuestionDock: View {
             .background(
                 RoundedRectangle(cornerRadius: 20)
                     .fill(.ultraThinMaterial)
-                    .overlay(RoundedRectangle(cornerRadius: 20).fill(Color.black.opacity(0.3)))
-                    .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.white.opacity(0.08), lineWidth: 1))
-                    .shadow(color: Color.black.opacity(0.4), radius: 12)
+                    .overlay(RoundedRectangle(cornerRadius: 20).fill(Theme.Colors.glassFill))
+                    .overlay(RoundedRectangle(cornerRadius: 20).stroke(Theme.Colors.border, lineWidth: 1))
+                    .shadow(color: Theme.Colors.shadow, radius: 12)
             )
             .padding(.horizontal, Theme.Spacing.xl)
         }

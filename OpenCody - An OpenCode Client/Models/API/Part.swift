@@ -791,3 +791,64 @@ enum AnyCodableValue: Sendable {
     case array([AnyCodableValue])
     case object([String: AnyCodableValue])
 }
+
+// MARK: - AnyCodableValue Accessors
+
+extension AnyCodableValue {
+    /// The value as a `String`, or `nil` if it is another type.
+    var asString: String? {
+        if case .string(let s) = self { return s }
+        return nil
+    }
+
+    /// The value as an `Int`, widening from `.double` when it is integral.
+    var asInt: Int? {
+        switch self {
+        case .int(let i): return i
+        case .double(let d): return Int(exactly: d.rounded())
+        default: return nil
+        }
+    }
+
+    /// The value as a `Double`, widening from `.int`.
+    var asDouble: Double? {
+        switch self {
+        case .double(let d): return d
+        case .int(let i): return Double(i)
+        default: return nil
+        }
+    }
+
+    /// The value as a `Bool`, or `nil` if it is another type.
+    var asBool: Bool? {
+        if case .bool(let b) = self { return b }
+        return nil
+    }
+
+    /// The value as an array, or `nil` if it is another type.
+    var asArray: [AnyCodableValue]? {
+        if case .array(let a) = self { return a }
+        return nil
+    }
+
+    /// The value as an object, or `nil` if it is another type.
+    var asObject: [String: AnyCodableValue]? {
+        if case .object(let o) = self { return o }
+        return nil
+    }
+
+    /// Whether the value is JSON `null`.
+    var isNull: Bool {
+        if case .null = self { return true }
+        return false
+    }
+}
+
+extension AnyCodable {
+    var asString: String? { value.asString }
+    var asInt: Int? { value.asInt }
+    var asDouble: Double? { value.asDouble }
+    var asBool: Bool? { value.asBool }
+    var asArray: [AnyCodableValue]? { value.asArray }
+    var asObject: [String: AnyCodableValue]? { value.asObject }
+}

@@ -53,7 +53,7 @@ struct CommandPaletteView: View {
             .background(Theme.Colors.graphite)
 
             Divider()
-                .overlay(Color.white.opacity(0.08))
+                .overlay(Theme.Colors.border)
 
             // Content area
             if isLoading && commands.isEmpty {
@@ -95,7 +95,7 @@ struct CommandPaletteView: View {
                             }
                             if command.id != filtered.last?.id {
                                 Divider()
-                                    .overlay(Color.white.opacity(0.05))
+                                    .overlay(Theme.Colors.hairline)
                                     .padding(.leading, Theme.Spacing.md)
                             }
                         }
@@ -109,13 +109,13 @@ struct CommandPaletteView: View {
                 .fill(.ultraThinMaterial)
                 .overlay(
                     RoundedRectangle(cornerRadius: 16)
-                        .fill(Color.black.opacity(0.3))
+                        .fill(Theme.Colors.glassFill)
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 16)
-                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                        .stroke(Theme.Colors.border, lineWidth: 1)
                 )
-                .shadow(color: Color.black.opacity(0.4), radius: 12, x: 0, y: -4)
+                .shadow(color: Theme.Colors.shadow, radius: 12, x: 0, y: -4)
         )
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .task {

@@ -13,6 +13,7 @@ struct SettingsView: View {
 
     @EnvironmentObject private var serverStore: ServerStoreModel
     @Bindable private var notificationSettings = NotificationSettings.shared
+    @AppStorage("appearancePreference") private var appearancePreference: String = AppearancePreference.system.rawValue
 
     var body: some View {
         ZStack {
@@ -33,6 +34,26 @@ struct SettingsView: View {
                                 detail: serverDetail
                             )
                         }
+                    }
+
+                    // MARK: - Appearance
+                    SettingsSection(title: "Appearance") {
+                        SettingsRow(
+                            icon: "circle.lefthalf.filled",
+                            iconColor: Theme.Colors.cyberBlue,
+                            title: "Theme",
+                            detail: "Follow the system or pick a fixed look",
+                            showChevron: false
+                        )
+
+                        Picker("Theme", selection: $appearancePreference) {
+                            ForEach(AppearancePreference.allCases) { preference in
+                                Text(preference.label).tag(preference.rawValue)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
+                        .padding(.top, Theme.Spacing.sm)
                     }
 
                     // MARK: - AI

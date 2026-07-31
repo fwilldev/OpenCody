@@ -63,7 +63,7 @@ struct AgentModelPicker: View {
                     .fill(Theme.Colors.graphite)
                     .overlay(
                         RoundedRectangle(cornerRadius: 10)
-                            .stroke(Color.white.opacity(0.06), lineWidth: 1)
+                            .stroke(Theme.Colors.hairline, lineWidth: 1)
                     )
             )
         }

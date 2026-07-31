@@ -48,7 +48,7 @@ struct FileMentionPaletteView: View {
             .background(Theme.Colors.graphite)
 
             Divider()
-                .overlay(Color.white.opacity(0.08))
+                .overlay(Theme.Colors.border)
 
             // Content area
             if isLoading && results.isEmpty {
@@ -90,7 +90,7 @@ struct FileMentionPaletteView: View {
                             }
                             if filePath != results.last {
                                 Divider()
-                                    .overlay(Color.white.opacity(0.05))
+                                    .overlay(Theme.Colors.hairline)
                                     .padding(.leading, Theme.Spacing.md)
                             }
                         }
@@ -104,13 +104,13 @@ struct FileMentionPaletteView: View {
                 .fill(.ultraThinMaterial)
                 .overlay(
                     RoundedRectangle(cornerRadius: 16)
-                        .fill(Color.black.opacity(0.3))
+                        .fill(Theme.Colors.glassFill)
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 16)
-                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                        .stroke(Theme.Colors.border, lineWidth: 1)
                 )
-                .shadow(color: Color.black.opacity(0.4), radius: 12, x: 0, y: -4)
+                .shadow(color: Theme.Colors.shadow, radius: 12, x: 0, y: -4)
         )
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .onChange(of: query) { _, newQuery in
@@ -237,7 +237,7 @@ private struct FileResultRow: View {
         case "ts", "tsx":
             return Theme.Colors.cyberBlue
         case "js", "jsx":
-            return Color(hex: "F7DF1E")
+            return Theme.Colors.javascriptYellow
         case "json", "yaml", "yml", "toml", "xml", "plist":
             return Theme.Colors.electricPurple
         case "md", "txt":

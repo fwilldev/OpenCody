@@ -5,16 +5,41 @@ import Foundation
 /// Typed wrapper for all message-related REST endpoints.
 ///
 /// Endpoints:
-/// - `GET  /session/{id}/message`            → list messages with parts
-/// - `GET  /session/{id}/message/{messageID}` → get single message with parts
-/// - `POST /session/{id}/message`             → prompt (async, returns 204)
+/// - `GET    /session/{id}/message`                         → list messages with parts
+/// - `GET    /session/{id}/message/{messageID}`              → one message with parts
+/// - `DELETE /session/{id}/message/{messageID}`              → delete a message
+/// - `POST   /session/{id}/prompt_async`                     → send a prompt, return immediately
+/// - `POST   /session/{id}/message`                          → send a prompt, await the reply
+/// - `PATCH  /session/{id}/message/{messageID}/part/{partID}` → update a part
+/// - `DELETE /session/{id}/message/{messageID}/part/{partID}` → delete a part
 struct MessageAPI: Sendable {
     let client: APIClient
+
+    /// Project directory that scopes every request made through this instance.
+    ///
+    /// These routes are session-scoped, and the server resolves which project
+    /// instance answers from the `directory` query parameter. See `SessionAPI` for
+    /// the full rationale — omitting it makes a server started outside the project
+    /// answer for the wrong one.
+    let directory: String?
+
+    init(client: APIClient, directory: String? = nil) {
+        self.client = client
+        self.directory = directory
+    }
+
+    /// Query items for a request, always carrying `directory` when known.
+    private func query(_ extra: [URLQueryItem] = []) -> [URLQueryItem]? {
+        var items: [URLQueryItem] = []
+        if let directory { items.append(URLQueryItem(name: "directory", value: directory)) }
+        items.append(contentsOf: extra)
+        return items.isEmpty ? nil : items
+    }
 
     // MARK: - Response Types
 
     /// The API returns `{ info: Message, parts: [Part] }` for message endpoints.
-    /// `MessageWithParts` in our models is NOT Codable, so we use this dedicated response type.
+    /// `MessageWithParts` in our models is not `Codable`, so this is the wire type.
     struct MessageWithPartsResponse: Codable, Sendable {
         let info: Message
         let parts: [Part]
@@ -30,9 +55,19 @@ struct MessageAPI: Sendable {
         let parts: [PromptPart]
         let model: ModelSelection?
         let agent: String?
+        /// Client-chosen ID for the resulting user message.
+        let messageID: String?
+        /// Model variant (e.g. a reasoning-effort tier).
+        let variant: String?
+        /// Extra system prompt appended for this turn only.
+        let system: String?
+        /// Per-turn tool enable/disable overrides, keyed by tool ID.
+        let tools: [String: Bool]?
+        /// When `true`, record the message without generating a reply.
+        let noReply: Bool?
 
         private enum CodingKeys: String, CodingKey {
-            case parts, model, agent
+            case parts, model, agent, messageID, variant, system, tools, noReply
         }
 
         func encode(to encoder: Encoder) throws {
@@ -40,6 +75,11 @@ struct MessageAPI: Sendable {
             try container.encode(parts, forKey: .parts)
             try container.encodeIfPresent(model, forKey: .model)
             try container.encodeIfPresent(agent, forKey: .agent)
+            try container.encodeIfPresent(messageID, forKey: .messageID)
+            try container.encodeIfPresent(variant, forKey: .variant)
+            try container.encodeIfPresent(system, forKey: .system)
+            try container.encodeIfPresent(tools, forKey: .tools)
+            try container.encodeIfPresent(noReply, forKey: .noReply)
         }
 
         struct ModelSelection: Encodable {
@@ -69,49 +109,184 @@ struct MessageAPI: Sendable {
         }
     }
 
-    // MARK: - Endpoints
+    // MARK: - Reading
 
-    /// List all messages with their parts for a session.
-    func list(sessionID: String) async throws -> [MessageWithPartsResponse] {
-        let data = try await client.requestData(.get("/session/\(sessionID)/message"))
-        #if DEBUG
-        if let raw = String(data: data, encoding: .utf8) {
-            let preview = raw.prefix(3000)
-        }
-        #endif
+    /// List messages with their parts for a session.
+    ///
+    /// - Parameters:
+    ///   - sessionID: The session to read.
+    ///   - limit: Maximum number of messages to return, newest-anchored. `nil` returns all.
+    ///   - before: Return only messages older than this message ID — used to page backwards.
+    func list(
+        sessionID: String,
+        limit: Int? = nil,
+        before: String? = nil
+    ) async throws -> [MessageWithPartsResponse] {
+        var extra: [URLQueryItem] = []
+        if let limit { extra.append(URLQueryItem(name: "limit", value: String(limit))) }
+        if let before { extra.append(URLQueryItem(name: "before", value: before)) }
+        let data = try await client.requestData(
+            .get("/session/\(sessionID)/message", queryItems: query(extra))
+        )
         do {
-            let result = try JSONDecoder().decode([MessageWithPartsResponse].self, from: data)
-            #if DEBUG
-            for r in result {
-                let partTypes = r.parts.map { $0.type }.joined(separator: ", ")
-            }
-            #endif
-            return result
+            return try JSONDecoder().decode([MessageWithPartsResponse].self, from: data)
         } catch {
+            #if DEBUG
             print("[MessageAPI] decode error: \(error)")
+            #endif
             throw error
         }
     }
 
     /// Get a single message with its parts.
     func get(sessionID: String, messageID: String) async throws -> MessageWithPartsResponse {
-        let data = try await client.requestData(.get("/session/\(sessionID)/message/\(messageID)"))
+        let data = try await client.requestData(.get("/session/\(sessionID)/message/\(messageID)", queryItems: query()))
         return try JSONDecoder().decode(MessageWithPartsResponse.self, from: data)
     }
 
-    /// Send a text prompt to a session. Returns immediately (204 No Content).
-    /// The actual response arrives via SSE events.
+    // MARK: - Sending
+
+    /// Send a prompt to a session without waiting for the reply.
+    ///
+    /// Returns as soon as the server has accepted the prompt (`204 No Content`);
+    /// the assistant's response streams in over SSE.
     func promptAsync(
         sessionID: String,
         text: String,
         modelID: String? = nil,
         providerID: String? = nil,
         agent: String? = nil,
+        variant: String? = nil,
+        system: String? = nil,
+        tools: [String: Bool]? = nil,
+        messageID: String? = nil,
         attachments: [PromptAttachment] = []
     ) async throws {
-        var parts: [PromptBody.PromptPart] = [
-            PromptBody.PromptPart(type: "text", text: text, mime: nil, filename: nil, url: nil)
-        ]
+        let body = makePromptBody(
+            text: text,
+            modelID: modelID,
+            providerID: providerID,
+            agent: agent,
+            variant: variant,
+            system: system,
+            tools: tools,
+            messageID: messageID,
+            attachments: attachments
+        )
+
+        let endpoint = APIEndpoint(
+            path: "/session/\(sessionID)/prompt_async",
+            method: .POST,
+            body: try JSONEncoder().encode(body),
+            queryItems: query(),
+            timeoutOverride: 300
+        )
+        try await client.requestVoid(endpoint)
+    }
+
+    /// Send a prompt and wait for the completed assistant message.
+    ///
+    /// Prefer `promptAsync` for interactive use — this blocks for the whole
+    /// generation, which can take minutes.
+    func prompt(
+        sessionID: String,
+        text: String,
+        modelID: String? = nil,
+        providerID: String? = nil,
+        agent: String? = nil,
+        variant: String? = nil,
+        system: String? = nil,
+        tools: [String: Bool]? = nil,
+        messageID: String? = nil,
+        attachments: [PromptAttachment] = []
+    ) async throws -> MessageWithPartsResponse {
+        let body = makePromptBody(
+            text: text,
+            modelID: modelID,
+            providerID: providerID,
+            agent: agent,
+            variant: variant,
+            system: system,
+            tools: tools,
+            messageID: messageID,
+            attachments: attachments
+        )
+
+        let endpoint = APIEndpoint(
+            path: "/session/\(sessionID)/message",
+            method: .POST,
+            body: try JSONEncoder().encode(body),
+            queryItems: query(),
+            timeoutOverride: 900
+        )
+        let data = try await client.requestData(endpoint)
+        return try JSONDecoder().decode(MessageWithPartsResponse.self, from: data)
+    }
+
+    // MARK: - Mutating
+
+    /// Permanently delete a message and all of its parts.
+    ///
+    /// Unlike `SessionAPI.revert`, this does not undo file changes the message caused.
+    func delete(sessionID: String, messageID: String) async throws {
+        try await client.requestVoid(
+            APIEndpoint(
+                path: "/session/\(sessionID)/message/\(messageID)",
+                method: .DELETE,
+                queryItems: query(),
+                contentType: .none
+            )
+        )
+    }
+
+    /// Delete a single part from a message.
+    func deletePart(sessionID: String, messageID: String, partID: String) async throws {
+        try await client.requestVoid(
+            APIEndpoint(
+                path: "/session/\(sessionID)/message/\(messageID)/part/\(partID)",
+                method: .DELETE,
+                queryItems: query(),
+                contentType: .none
+            )
+        )
+    }
+
+    /// Replace a part with an edited version.
+    func updatePart(sessionID: String, messageID: String, part: Part) async throws -> Part {
+        let data = try await client.requestData(
+            APIEndpoint(
+                path: "/session/\(sessionID)/message/\(messageID)/part/\(part.id)",
+                method: .PATCH,
+                body: try JSONEncoder().encode(part),
+                queryItems: query()
+            )
+        )
+        return try JSONDecoder().decode(Part.self, from: data)
+    }
+
+    // MARK: - Private
+
+    /// Build the shared body for `prompt` and `promptAsync`.
+    private func makePromptBody(
+        text: String,
+        modelID: String?,
+        providerID: String?,
+        agent: String?,
+        variant: String?,
+        system: String?,
+        tools: [String: Bool]?,
+        messageID: String?,
+        attachments: [PromptAttachment]
+    ) -> PromptBody {
+        var parts: [PromptBody.PromptPart] = []
+
+        // An empty text part is rejected by the server, so include it only when
+        // there is something to send — an attachment-only prompt is valid.
+        if !text.isEmpty || attachments.isEmpty {
+            parts.append(
+                PromptBody.PromptPart(type: "text", text: text, mime: nil, filename: nil, url: nil)
+            )
+        }
 
         for attachment in attachments {
             parts.append(
@@ -126,39 +301,20 @@ struct MessageAPI: Sendable {
         }
 
         var modelSelection: PromptBody.ModelSelection? = nil
-        if let mID = modelID, let pID = providerID {
-            modelSelection = PromptBody.ModelSelection(providerID: pID, modelID: mID)
+        if let modelID, let providerID {
+            modelSelection = PromptBody.ModelSelection(providerID: providerID, modelID: modelID)
         }
 
-        let body = PromptBody(
+        return PromptBody(
             parts: parts,
             model: modelSelection,
-            agent: agent
+            agent: agent,
+            messageID: messageID,
+            variant: variant,
+            system: system,
+            tools: tools,
+            noReply: nil
         )
-
-        let encodedBody = try JSONEncoder().encode(body)
-
-        #if DEBUG
-        if let jsonString = String(data: encodedBody, encoding: .utf8) {
-        }
-        #endif
-
-        let endpoint = APIEndpoint(
-            path: "/session/\(sessionID)/prompt_async",
-            method: .POST,
-            body: encodedBody,
-            timeoutOverride: 300
-        )
-
-        do {
-            try await client.requestVoid(endpoint)
-            #if DEBUG
-            #endif
-        } catch {
-            #if DEBUG
-            #endif
-            throw error
-        }
     }
 }
 

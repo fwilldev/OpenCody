@@ -103,7 +103,7 @@ struct ServerSwitcherView: View {
                 .fill(.ultraThinMaterial)
                 .overlay(
                     RoundedRectangle(cornerRadius: Theme.Radius.button)
-                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                        .stroke(Theme.Colors.border, lineWidth: 1)
                 )
         )
     }

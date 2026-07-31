@@ -53,7 +53,7 @@ struct AttachmentPickerView: View {
                     .background(
                         Capsule()
                             .fill(Theme.Colors.graphite)
-                            .overlay(Capsule().stroke(Color.white.opacity(0.08), lineWidth: 1))
+                            .overlay(Capsule().stroke(Theme.Colors.border, lineWidth: 1))
                     )
                 }
                 .onChange(of: selectedPhotos) { _, newItems in
@@ -81,7 +81,7 @@ struct AttachmentPickerView: View {
                     .background(
                         Capsule()
                             .fill(Theme.Colors.graphite)
-                            .overlay(Capsule().stroke(Color.white.opacity(0.08), lineWidth: 1))
+                            .overlay(Capsule().stroke(Theme.Colors.border, lineWidth: 1))
                     )
                 }
                 .fileImporter(
@@ -169,7 +169,7 @@ private struct AttachmentThumbnail: View {
         .frame(width: 64, height: 64)
         .overlay(
             RoundedRectangle(cornerRadius: 10)
-                .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                .stroke(Theme.Colors.border, lineWidth: 1)
         )
     }
 

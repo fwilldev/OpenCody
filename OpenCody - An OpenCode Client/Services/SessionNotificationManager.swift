@@ -212,7 +212,7 @@ final class SessionNotificationManager {
             type: .permission,
             sessionID: sessionID,
             title: "Permission Required",
-            body: "Tool \"\(permission.title)\" is waiting for approval."
+            body: "Tool \"\(permission.displayTitle)\" is waiting for approval."
         ))
     }
 

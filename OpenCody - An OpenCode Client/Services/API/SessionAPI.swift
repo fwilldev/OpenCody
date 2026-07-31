@@ -5,30 +5,97 @@ import Foundation
 /// Typed wrapper for all session-related REST endpoints.
 ///
 /// Endpoints:
-/// - `GET    /session`               → list all sessions
-/// - `POST   /session`               → create a new session
-/// - `GET    /session/{id}`           → get one session
-/// - `DELETE /session/{id}`           → delete a session
-/// - `POST   /session/{id}/abort`     → abort a running session
-/// - `POST   /session/{id}/shell`      → execute a shell command
-/// - `POST   /session/{id}/summarize` → summarize a session
-/// - `POST   /session/{id}/share`     → share a session
-/// - `DELETE /session/{id}/share`     → unshare a session
-/// - `POST   /session/{id}/fork`      → fork a session
-/// - `POST   /session/{id}/init`      → initialize a session
-/// - `POST   /session/{id}/revert`    → revert a session
-/// - `POST   /session/{id}/unrevert`  → undo a revert
-/// - `GET    /session/{id}/diff`      → get session diffs
-/// - `GET    /session/status`         → get status of all sessions
-/// - `POST   /session/{id}/permissions/{permissionID}` → reply to permission
+/// - `GET    /session`                  → list sessions
+/// - `POST   /session`                  → create a session
+/// - `GET    /session/status`            → status of all sessions
+/// - `GET    /session/{id}`              → get one session
+/// - `PATCH  /session/{id}`              → update title / metadata / archived
+/// - `DELETE /session/{id}`              → delete a session
+/// - `GET    /session/{id}/children`     → child (subagent) sessions
+/// - `GET    /session/{id}/todo`         → todo list
+/// - `GET    /session/{id}/diff`         → file diffs
+/// - `POST   /session/{id}/abort`        → abort a running session
+/// - `POST   /session/{id}/init`         → write AGENTS.md for the project
+/// - `POST   /session/{id}/fork`         → fork at a message
+/// - `POST   /session/{id}/share`        → create a share link
+/// - `DELETE /session/{id}/share`        → remove the share link
+/// - `POST   /session/{id}/summarize`    → compact the conversation
+/// - `POST   /session/{id}/revert`       → revert to a message
+/// - `POST   /session/{id}/unrevert`     → restore reverted messages
+/// - `POST   /session/{id}/shell`        → run a shell command in session context
+/// - `GET    /experimental/session`      → sessions across all projects
+/// - `POST   /experimental/session/{id}/background` → detach blocking subagents
 struct SessionAPI: Sendable {
     let client: APIClient
 
+    /// Project directory that scopes every request made through this instance.
+    ///
+    /// The server resolves *which project instance* answers a request from the
+    /// `directory` query parameter. Omitting it makes the server fall back to its
+    /// own working directory, so a server started outside the project — or serving
+    /// several projects — silently answers for the wrong one: `/diff` and `/todo`
+    /// come back empty even though the session has changes.
+    ///
+    /// It is a stored property rather than a per-method argument so a new endpoint
+    /// cannot forget to send it. Always pass `session.directory` (or the project
+    /// worktree) when one is in scope.
+    let directory: String?
+
+    init(client: APIClient, directory: String? = nil) {
+        self.client = client
+        self.directory = directory
+    }
+
+    /// Query items for a request, always carrying `directory` when known.
+    private func query(_ extra: [URLQueryItem] = []) -> [URLQueryItem]? {
+        var items: [URLQueryItem] = []
+        if let directory { items.append(URLQueryItem(name: "directory", value: directory)) }
+        items.append(contentsOf: extra)
+        return items.isEmpty ? nil : items
+    }
+
+    /// A JSON-body endpoint scoped to `directory`.
+    ///
+    /// The `.post`/`.patch` convenience builders on `APIEndpoint` take no query
+    /// items, so body-carrying session routes are built here to keep `directory`
+    /// attached.
+    private func scoped(
+        _ path: String,
+        method: APIEndpoint.HTTPMethod,
+        body: some Encodable,
+        timeout: TimeInterval? = nil
+    ) throws -> APIEndpoint {
+        APIEndpoint(
+            path: path,
+            method: method,
+            body: try JSONEncoder().encode(body),
+            queryItems: query(),
+            timeoutOverride: timeout
+        )
+    }
+
     // MARK: - Request Bodies
+
+    /// Model reference used by session create / prompt bodies.
+    struct ModelRef: Encodable, Sendable {
+        let providerID: String
+        /// The model identifier. `POST /session` names this key `id`.
+        let id: String
+        let variant: String?
+
+        init(providerID: String, id: String, variant: String? = nil) {
+            self.providerID = providerID
+            self.id = id
+            self.variant = variant
+        }
+    }
 
     private struct CreateBody: Encodable {
         let parentID: String?
         let title: String?
+        let agent: String?
+        let model: ModelRef?
+        let workspaceID: String?
     }
 
     private struct SummarizeBody: Encodable {
@@ -41,20 +108,17 @@ struct SessionAPI: Sendable {
         let messageID: String?
     }
 
+    /// `POST /session/{id}/init` — all three fields are required by the server.
     private struct InitBody: Encodable {
-        let agent: String?
-        let modelID: String?
-        let providerID: String?
+        let modelID: String
+        let providerID: String
+        let messageID: String
     }
 
+    /// `POST /session/{id}/revert` — `snapshot` is no longer part of the schema.
     private struct RevertBody: Encodable {
         let messageID: String
         let partID: String?
-        let snapshot: String?
-    }
-
-    private struct PermissionReplyBody: Encodable {
-        let response: String
     }
 
     private struct UpdateBody: Encodable {
@@ -106,49 +170,86 @@ struct SessionAPI: Sendable {
         }
     }
 
-    // MARK: - Endpoints
+    // MARK: - Listing
 
     /// List sessions (optionally filtered by directory).
     /// - Parameters:
     ///   - directory: Only return sessions for this project directory.
-    ///   - roots: When `true`, return root sessions with aggregated summary data (default `true`).
-    ///   - limit: Maximum number of sessions to return (default 100).
+    ///   - roots: When `true`, return root sessions with aggregated summary data.
+    ///   - limit: Maximum number of sessions to return.
     ///   - start: Pagination offset — skip this many sessions before returning results.
-    func list(directory: String? = nil, roots: Bool = true, limit: Int = 100, start: Int? = nil) async throws -> [Session] {
-        var items: [URLQueryItem] = []
-        if let directory { items.append(URLQueryItem(name: "directory", value: directory)) }
-        if roots { items.append(URLQueryItem(name: "roots", value: "true")) }
-        items.append(URLQueryItem(name: "limit", value: String(limit)))
-        if let start { items.append(URLQueryItem(name: "start", value: String(start))) }
-        let data = try await client.requestData(.get("/session", queryItems: items.isEmpty ? nil : items))
-        #if DEBUG
-        let preview = String(data: data, encoding: .utf8)?.prefix(3000) ?? "<nil>"
-        print("[SessionAPI.list] responseLength=\(data.count) preview=\(preview)")
-        #endif
-        do {
-            let result = try JSONDecoder().decode([Session].self, from: data)
-            #if DEBUG
-            for s in result {
-                print("[SessionAPI.list] session=\(s.id) title=\(s.title.prefix(40)) summary=\(s.summary.map { "files=\($0.files) +\($0.additions) -\($0.deletions)" } ?? "nil")")
-            }
-            #endif
-            return result
-        } catch {
-            #if DEBUG
-            print("[SessionAPI.list] DECODE ERROR: \(error)")
-            #endif
-            throw error
-        }
+    ///   - search: Free-text filter applied server-side.
+    func list(
+        roots: Bool = true,
+        limit: Int = 100,
+        start: Int? = nil,
+        search: String? = nil
+    ) async throws -> [Session] {
+        var extra: [URLQueryItem] = []
+        if roots { extra.append(URLQueryItem(name: "roots", value: "true")) }
+        extra.append(URLQueryItem(name: "limit", value: String(limit)))
+        if let start { extra.append(URLQueryItem(name: "start", value: String(start))) }
+        if let search, !search.isEmpty { extra.append(URLQueryItem(name: "search", value: search)) }
+        let data = try await client.requestData(.get("/session", queryItems: query(extra)))
+        return try JSONDecoder().decode([Session].self, from: data)
     }
 
+    /// List sessions across every known project.
+    ///
+    /// `GET /experimental/session` returns `GlobalSession`, which is a `Session`
+    /// plus a `project` summary. Archived sessions are excluded unless requested.
+    func listGlobal(
+        roots: Bool = true,
+        limit: Int = 100,
+        cursor: Int? = nil,
+        search: String? = nil,
+        archived: Bool = false
+    ) async throws -> [GlobalSession] {
+        var items: [URLQueryItem] = [
+            URLQueryItem(name: "roots", value: roots ? "true" : "false"),
+            URLQueryItem(name: "limit", value: String(limit)),
+        ]
+        if let cursor { items.append(URLQueryItem(name: "cursor", value: String(cursor))) }
+        if let search, !search.isEmpty { items.append(URLQueryItem(name: "search", value: search)) }
+        if archived { items.append(URLQueryItem(name: "archived", value: "true")) }
+        let data = try await client.requestData(.get("/experimental/session", queryItems: items))
+        return try JSONDecoder().decode([GlobalSession].self, from: data)
+    }
+
+    /// Get the status of all sessions (keyed by session ID).
+    func status() async throws -> [String: SessionStatus] {
+        let data = try await client.requestData(.get("/session/status", queryItems: query()))
+        return try JSONDecoder().decode([String: SessionStatus].self, from: data)
+    }
+
+    // MARK: - CRUD
+
     /// Create a new session for a specific directory.
-    func create(directory: String, title: String? = nil, parentID: String? = nil) async throws -> Session {
-        let body = CreateBody(parentID: parentID, title: title)
+    /// - Parameters:
+    ///   - directory: Project directory the session belongs to.
+    ///   - title: Optional initial title.
+    ///   - parentID: Parent session when creating a child/subagent session.
+    ///   - agent: Agent to bind the session to.
+    ///   - model: Model to bind the session to.
+    func create(
+        title: String? = nil,
+        parentID: String? = nil,
+        agent: String? = nil,
+        model: ModelRef? = nil,
+        workspaceID: String? = nil
+    ) async throws -> Session {
+        let body = CreateBody(
+            parentID: parentID,
+            title: title,
+            agent: agent,
+            model: model,
+            workspaceID: workspaceID
+        )
         let endpoint = APIEndpoint(
             path: "/session",
             method: .POST,
-            body: try? JSONEncoder().encode(body),
-            queryItems: [URLQueryItem(name: "directory", value: directory)]
+            body: try JSONEncoder().encode(body),
+            queryItems: query()
         )
         let data = try await client.requestData(endpoint)
         return try JSONDecoder().decode(Session.self, from: data)
@@ -156,19 +257,19 @@ struct SessionAPI: Sendable {
 
     /// Get a single session by ID.
     func get(id: String) async throws -> Session {
-        let data = try await client.requestData(.get("/session/\(id)"))
+        let data = try await client.requestData(.get("/session/\(id)", queryItems: query()))
         return try JSONDecoder().decode(Session.self, from: data)
     }
 
-    /// Delete a session.
+    /// Delete a session and all of its data.
     func delete(id: String) async throws {
-        try await client.requestVoid(.delete("/session/\(id)"))
+        try await client.requestVoid(APIEndpoint(path: "/session/\(id)", method: .DELETE, queryItems: query(), contentType: .none))
     }
 
-    /// Update a session (title, archived status, etc.).
+    /// Update a session (title, archived status).
     /// - Parameters:
     ///   - id: The session ID.
-    ///   - title: New title for the session, or `nil` to leave unchanged.
+    ///   - title: New title, or `nil` to leave unchanged.
     ///   - setArchived: `true` to archive (sets timestamp), `false` to unarchive (sends JSON null).
     ///                  Pass `nil` to leave the archived status unchanged.
     func update(id: String, title: String? = nil, setArchived: Bool? = nil) async throws -> Session {
@@ -178,126 +279,146 @@ struct SessionAPI: Sendable {
             )
         }
         let body = UpdateBody(title: title, time: timeBody)
-        let data = try await client.requestData(.patch("/session/\(id)", body: body))
+        let data = try await client.requestData(try scoped("/session/\(id)", method: .PATCH, body: body))
         return try JSONDecoder().decode(Session.self, from: data)
     }
 
-    /// Abort a running session.
-    func abort(id: String) async throws {
-        try await client.requestVoid(APIEndpoint(path: "/session/\(id)/abort", method: .POST))
+    /// Get the child sessions forked from (or spawned as subagents of) a session.
+    func children(id: String) async throws -> [Session] {
+        let data = try await client.requestData(.get("/session/\(id)/children", queryItems: query()))
+        return try JSONDecoder().decode([Session].self, from: data)
     }
 
-    /// Summarize a session starting from a message.
-    /// Trigger context compaction for a session.
-    func summarize(id: String, providerID: String, modelID: String, auto: Bool? = nil) async throws -> Bool {
-        let data = try await client.requestData(.post("/session/\(id)/summarize", body: SummarizeBody(providerID: providerID, modelID: modelID, auto: auto)))
-        return try JSONDecoder().decode(Bool.self, from: data)
+    // MARK: - Run Control
+
+    /// Abort a running session.
+    func abort(id: String) async throws {
+        try await client.requestVoid(APIEndpoint(path: "/session/\(id)/abort", method: .POST, queryItems: query()))
     }
+
+    /// Detach any synchronous subagents currently blocking the session so they
+    /// continue in the background.
+    func backgroundSubagents(id: String) async throws {
+        try await client.requestVoid(
+            APIEndpoint(path: "/experimental/session/\(id)/background", method: .POST, queryItems: query())
+        )
+    }
+
+    /// Compact the session's context via AI summarization.
+    /// - Returns: `true` when the server accepted the request.
+    func summarize(id: String, providerID: String, modelID: String, auto: Bool? = nil) async throws -> Bool {
+        let data = try await client.requestData(
+            try scoped(
+                "/session/\(id)/summarize",
+                method: .POST,
+                body: SummarizeBody(providerID: providerID, modelID: modelID, auto: auto)
+            )
+        )
+        return (try? JSONDecoder().decode(Bool.self, from: data)) ?? true
+    }
+
+    /// Analyze the project and write an `AGENTS.md` file.
+    ///
+    /// - Parameter messageID: ID to attach the generated message to. A fresh
+    ///   `msg_`-prefixed identifier is generated when omitted.
+    /// - Returns: `true` when the server accepted the request.
+    @discardableResult
+    func initialize(
+        id: String,
+        providerID: String,
+        modelID: String,
+        messageID: String? = nil
+    ) async throws -> Bool {
+        let body = InitBody(
+            modelID: modelID,
+            providerID: providerID,
+            messageID: messageID ?? IDGenerator.message()
+        )
+        let data = try await client.requestData(try scoped("/session/\(id)/init", method: .POST, body: body))
+        return (try? JSONDecoder().decode(Bool.self, from: data)) ?? true
+    }
+
+    // MARK: - Sharing
 
     /// Share a session (creates a public share link).
     func share(id: String) async throws -> Session {
-        let data = try await client.requestData(APIEndpoint(path: "/session/\(id)/share", method: .POST))
+        let data = try await client.requestData(APIEndpoint(path: "/session/\(id)/share", method: .POST, queryItems: query()))
         return try JSONDecoder().decode(Session.self, from: data)
     }
 
     /// Unshare a session (removes the share link).
     func unshare(id: String) async throws {
-        try await client.requestVoid(.delete("/session/\(id)/share"))
+        try await client.requestVoid(APIEndpoint(path: "/session/\(id)/share", method: .DELETE, queryItems: query(), contentType: .none))
     }
+
+    // MARK: - History
 
     /// Fork a session, optionally at a specific message.
     func fork(id: String, messageID: String? = nil) async throws -> Session {
-        let data = try await client.requestData(.post("/session/\(id)/fork", body: ForkBody(messageID: messageID)))
+        let data = try await client.requestData(try scoped("/session/\(id)/fork", method: .POST, body: ForkBody(messageID: messageID)))
         return try JSONDecoder().decode(Session.self, from: data)
     }
 
-    /// Initialize a session with agent/model settings.
-    func initialize(
-        id: String,
-        agent: String? = nil,
-        modelID: String? = nil,
-        providerID: String? = nil
-    ) async throws -> Session {
+    /// Revert the session to the state before a specific message (or part).
+    func revert(id: String, messageID: String, partID: String? = nil) async throws -> Session {
         let data = try await client.requestData(
-            .post(
-                "/session/\(id)/init",
-                body: InitBody(agent: agent, modelID: modelID, providerID: providerID)
-            )
+            try scoped("/session/\(id)/revert", method: .POST, body: RevertBody(messageID: messageID, partID: partID))
         )
         return try JSONDecoder().decode(Session.self, from: data)
     }
 
-    /// Revert a session to a specific message/part/snapshot.
-    func revert(id: String, messageID: String, partID: String? = nil, snapshot: String? = nil) async throws -> Session {
-        let data = try await client.requestData(
-            .post(
-                "/session/\(id)/revert",
-                body: RevertBody(messageID: messageID, partID: partID, snapshot: snapshot)
-            )
-        )
-        return try JSONDecoder().decode(Session.self, from: data)
-    }
-
-    /// Undo a revert on a session.
+    /// Restore all previously reverted messages.
     func unrevert(id: String) async throws -> Session {
-        let data = try await client.requestData(APIEndpoint(path: "/session/\(id)/unrevert", method: .POST))
+        let data = try await client.requestData(APIEndpoint(path: "/session/\(id)/unrevert", method: .POST, queryItems: query()))
         return try JSONDecoder().decode(Session.self, from: data)
     }
 
-    /// Get diffs for a session (returns all stored diffs for the session).
+    /// Get the diffs produced by one user message.
+    ///
+    /// - Important: `messageID` is **required** despite being optional in the
+    ///   OpenAPI document. The server's handler starts with
+    ///   `if (!input.messageID) return []`, so omitting it always yields an empty
+    ///   array, and there is no whole-session variant of this route. For a
+    ///   session-wide view build a `SessionChangeSet` from the session's messages
+    ///   instead — the per-turn diffs are already included in
+    ///   `GET /session/{id}/message`.
+    ///
     /// - Parameters:
     ///   - id: The session ID.
-    ///   - messageID: Optional message ID to scope the diffs to a specific message.
-    func diff(id: String, messageID: String? = nil) async throws -> [FileDiff] {
-        var queryItems: [URLQueryItem] = []
-        if let messageID { queryItems.append(URLQueryItem(name: "messageID", value: messageID)) }
-        let data = try await client.requestData(.get("/session/\(id)/diff", queryItems: queryItems.isEmpty ? nil : queryItems))
-        #if DEBUG
-        let preview = String(data: data, encoding: .utf8)?.prefix(2000) ?? "<nil>"
-        print("[SessionAPI.diff] id=\(id) responseLength=\(data.count) preview=\(preview)")
-        #endif
-        do {
-            let result = try JSONDecoder().decode([FileDiff].self, from: data)
-            #if DEBUG
-            print("[SessionAPI.diff] decoded \(result.count) diffs")
-            #endif
-            return result
-        } catch {
-            #if DEBUG
-            print("[SessionAPI.diff] DECODE ERROR: \(error)")
-            #endif
-            throw error
-        }
-    }
-
-    /// Get the status of all sessions (keyed by session ID).
-    func status() async throws -> [String: SessionStatus] {
-        let data = try await client.requestData(.get("/session/status"))
-        return try JSONDecoder().decode([String: SessionStatus].self, from: data)
-    }
-
-    /// Reply to a permission request in a session.
-    func replyToPermission(sessionID: String, permissionID: String, response: String) async throws {
-        try await client.requestVoid(
-            .post(
-                "/session/\(sessionID)/permissions/\(permissionID)",
-                body: PermissionReplyBody(response: response)
+    ///   - messageID: The **user** message whose changes to return. Passing an
+    ///     assistant message ID also yields an empty array.
+    func diff(id: String, messageID: String) async throws -> [FileDiff] {
+        let data = try await client.requestData(
+            .get(
+                "/session/\(id)/diff",
+                queryItems: query([URLQueryItem(name: "messageID", value: messageID)])
             )
         )
+        return try JSONDecoder().decode([FileDiff].self, from: data)
     }
 
     /// Get todos for a session.
     func todos(id: String) async throws -> [TodoItem] {
-        let data = try await client.requestData(.get("/session/\(id)/todo"))
+        let data = try await client.requestData(.get("/session/\(id)/todo", queryItems: query()))
         return try JSONDecoder().decode([TodoItem].self, from: data)
     }
 
-    /// Execute a shell command in the session.
-    func shell(id: String, command: String, agent: String, providerID: String? = nil, modelID: String? = nil) async throws {
+    // MARK: - Shell
+
+    /// Execute a shell command within the session context.
+    func shell(
+        id: String,
+        command: String,
+        agent: String,
+        providerID: String? = nil,
+        modelID: String? = nil
+    ) async throws {
         var model: ShellBody.ShellModelSelection? = nil
         if let providerID, let modelID {
             model = ShellBody.ShellModelSelection(providerID: providerID, modelID: modelID)
         }
-        try await client.requestVoid(.post("/session/\(id)/shell", body: ShellBody(command: command, agent: agent, model: model)))
+        try await client.requestVoid(
+            try scoped("/session/\(id)/shell", method: .POST, body: ShellBody(command: command, agent: agent, model: model), timeout: 300)
+        )
     }
 }

@@ -6,14 +6,14 @@ struct StepStartView: View {
     var body: some View {
         HStack {
             Rectangle()
-                .fill(Color.white.opacity(0.08))
+                .fill(Theme.Colors.border)
                 .frame(height: 1)
             Text("Step")
                 .font(.system(size: 10, weight: .medium))
                 .foregroundStyle(Theme.Colors.smoke)
                 .padding(.horizontal, 8)
             Rectangle()
-                .fill(Color.white.opacity(0.08))
+                .fill(Theme.Colors.border)
                 .frame(height: 1)
         }
         .padding(.vertical, 4)
@@ -26,7 +26,7 @@ struct StepFinishView: View {
     var body: some View {
         HStack {
             Rectangle()
-                .fill(Color.white.opacity(0.08))
+                .fill(Theme.Colors.border)
                 .frame(height: 1)
             VStack(spacing: 2) {
                 Text(part.reason.isEmpty ? "Step finished" : part.reason)
@@ -40,7 +40,7 @@ struct StepFinishView: View {
             }
             .padding(.horizontal, 8)
             Rectangle()
-                .fill(Color.white.opacity(0.08))
+                .fill(Theme.Colors.border)
                 .frame(height: 1)
         }
         .padding(.vertical, 4)

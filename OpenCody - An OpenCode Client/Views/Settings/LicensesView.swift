@@ -32,7 +32,7 @@ struct LicensesView: View {
                             Divider()
                                 .background(Theme.Colors.slate)
 
-                            Link(destination: URL(string: "https://github.com/anomalyco/opencode/blob/dev/LICENSE")!) {
+                            Link(destination: URL(string: "https://github.com/sst/opencode/blob/dev/LICENSE")!) {
                                 HStack(spacing: Theme.Spacing.sm) {
                                     Image(systemName: "doc.text")
                                         .font(.system(size: 14, weight: .semibold))

@@ -51,8 +51,8 @@
     }
   ],
   "settings" : {
-    "_applicationInternalID" : "6741163558",
-    "_developerTeamID" : "2985V55R5X",
+    "_applicationInternalID" : "",
+    "_developerTeamID" : "",
     "_failTransactionsEnabled" : false,
     "_lastSynchronizedDate" : "2026-03-10T09:00:00Z",
     "_locale" : "en_US",

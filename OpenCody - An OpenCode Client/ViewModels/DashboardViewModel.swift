@@ -95,6 +95,7 @@ final class DashboardViewModel {
         error = nil
 
         do {
+            // Deliberately unscoped: the dashboard lists sessions across every project.
             let api = SessionAPI(client: client)
             let fetched = try await api.list()
             sessions = fetched.sorted { $0.time.updated > $1.time.updated }
@@ -141,8 +142,6 @@ final class DashboardViewModel {
             throw OpenCodeError.connectionFailed("No active server connection")
         }
 
-        let api = SessionAPI(client: client)
-
         let normalizedPath = normalizePath(path)
 
         // Auto-reopen if the project was previously closed
@@ -150,7 +149,8 @@ final class DashboardViewModel {
             closedProjectsStore.reopenIfClosed(directory: normalizedPath, serverID: serverID)
         }
 
-        let session = try await api.create(directory: normalizedPath)
+        let api = SessionAPI(client: client, directory: normalizedPath)
+        let session = try await api.create()
 
         // Insert the new session immediately instead of relying on loadSessions(),
         // which can be cancelled by SwiftUI task management and cause spurious errors.
@@ -162,12 +162,20 @@ final class DashboardViewModel {
     }
 
     /// Delete a session by ID.
+    /// The project directory of a loaded session.
+    ///
+    /// Per-session routes must be scoped to the session's own project, which these
+    /// id-only entry points would otherwise not know.
+    private func directory(of sessionID: String) -> String? {
+        sessions.first { $0.id == sessionID }?.directory
+    }
+
     func deleteSession(id: String) async throws {
         guard let client = connectionManager.activeAPIClient else {
             throw OpenCodeError.connectionFailed("No active server connection")
         }
 
-        let api = SessionAPI(client: client)
+        let api = SessionAPI(client: client, directory: directory(of: id))
         try await api.delete(id: id)
         sessions.removeAll { $0.id == id }
         statusMap.removeValue(forKey: id)
@@ -179,7 +187,7 @@ final class DashboardViewModel {
             throw OpenCodeError.connectionFailed("No active server connection")
         }
 
-        let api = SessionAPI(client: client)
+        let api = SessionAPI(client: client, directory: directory(of: id))
         let updated = try await api.update(id: id, setArchived: true)
         if let index = sessions.firstIndex(where: { $0.id == id }) {
             sessions[index] = updated
@@ -192,7 +200,7 @@ final class DashboardViewModel {
             throw OpenCodeError.connectionFailed("No active server connection")
         }
 
-        let api = SessionAPI(client: client)
+        let api = SessionAPI(client: client, directory: directory(of: id))
         let updated = try await api.update(id: id, setArchived: false)
         if let index = sessions.firstIndex(where: { $0.id == id }) {
             sessions[index] = updated
@@ -260,13 +268,17 @@ final class DashboardViewModel {
             statusMap[sessionID] = .idle
 
         case .sessionDiff(let payload):
-            // session.diff arrives after session.updated, which should carry the summary.
-            // As a safety net, if the session in our list still has no summary, re-fetch it.
-            if let index = sessions.firstIndex(where: { $0.id == payload.sessionID }),
-               sessions[index].summary == nil || sessions[index].summary?.files == 0 {
+            // Only act when the event carries data. The server publishes this event
+            // with a hardcoded empty diff and simultaneously resets `Session.summary`
+            // to {0, 0, 0}, so re-fetching on an empty payload never yields a summary
+            // and just costs a request per event.
+            if !payload.diff.isEmpty,
+               let index = sessions.firstIndex(where: { $0.id == payload.sessionID }) {
+                let sessionDirectory = sessions[index].directory
                 Task { [weak self] in
                     guard let self, let client = self.connectionManager.activeAPIClient else { return }
-                    if let updated = try? await SessionAPI(client: client).get(id: payload.sessionID) {
+                    if let updated = try? await SessionAPI(client: client, directory: sessionDirectory)
+                        .get(id: payload.sessionID) {
                         if let idx = self.sessions.firstIndex(where: { $0.id == payload.sessionID }) {
                             self.sessions[idx] = updated
                         }

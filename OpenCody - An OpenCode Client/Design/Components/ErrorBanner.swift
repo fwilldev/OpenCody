@@ -73,7 +73,7 @@ struct ErrorBanner: View {
         .padding(.vertical, Theme.Spacing.sm)
         .padding(.trailing, Theme.Spacing.sm)
         .background(.ultraThinMaterial)
-        .background(Color.black.opacity(0.5))
+        .background(Theme.Colors.glassFill)
         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.small))
         .overlay(alignment: .leading) { RoundedRectangle(cornerRadius: 2).fill(error.accentColor).frame(width: 4) }
         .overlay(RoundedRectangle(cornerRadius: Theme.Radius.small).stroke(error.accentColor.opacity(0.3), lineWidth: 1))

@@ -8,8 +8,10 @@
 import SwiftUI
 
 struct ContentView: View {
+    @AppStorage("appearancePreference") private var appearancePreference: String = AppearancePreference.system.rawValue
+
     var body: some View {
         RootView()
-            .preferredColorScheme(.dark)
+            .preferredColorScheme(AppearancePreference(rawValue: appearancePreference)?.colorScheme)
     }
 }

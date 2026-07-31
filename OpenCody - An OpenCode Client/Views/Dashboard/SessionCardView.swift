@@ -13,6 +13,35 @@ import SwiftUI
 struct SessionCardView: View {
     let session: Session
     let status: SessionStatus?
+    /// Connection used to lazily compute change totals. When `nil` the card simply
+    /// omits them — used by previews and any caller without a live server.
+    let connectionManager: ConnectionManager?
+
+    private let changeStore = SessionChangeStore.shared
+
+    init(
+        session: Session,
+        status: SessionStatus?,
+        connectionManager: ConnectionManager? = nil
+    ) {
+        self.session = session
+        self.status = status
+        self.connectionManager = connectionManager
+    }
+
+    /// Change totals for this session: the server's summary when it is real,
+    /// otherwise the lazily computed ones.
+    private var changeTotals: SessionChangeStore.Totals? {
+        // Prefer the server's own numbers if a future version starts populating them.
+        if let summary = session.summary, summary.hasMeaningfulTotals {
+            return SessionChangeStore.Totals(
+                files: summary.files,
+                additions: summary.additions,
+                deletions: summary.deletions
+            )
+        }
+        return changeStore.totals(for: session, serverID: connectionManager?.activeServerID)
+    }
 
     // MARK: - Body
 
@@ -48,26 +77,34 @@ struct SessionCardView: View {
 
             // Bottom row: summary + relative time
             HStack {
-                // Summary info
-                if let summary = session.summary {
+                // Change totals.
+                //
+                // `session.summary` cannot be used directly: the server writes it as
+                // a hardcoded {0, 0, 0} and never updates it, so an all-zero summary
+                // means "not computed", not "no changes". Rendering it would claim
+                // "0 files · +0 -0" for a session that did change files. Real totals
+                // are computed lazily from the message list once this card appears —
+                // see `SessionChangeStore`.
+                if let totals = changeTotals, !totals.isEmpty {
                     HStack(spacing: Theme.Spacing.xs) {
                         Image(systemName: "doc.text")
                             .font(.system(size: 10))
                             .foregroundStyle(Theme.Colors.smoke)
-                        Text("\(summary.files) file\(summary.files == 1 ? "" : "s")")
+                        Text("\(totals.files) file\(totals.files == 1 ? "" : "s")")
                             .font(Theme.Fonts.caption)
                             .foregroundStyle(Theme.Colors.smoke)
 
                         Text("·")
                             .foregroundStyle(Theme.Colors.smoke)
 
-                        Text("+\(summary.additions)")
+                        Text("+\(totals.additions)")
                             .font(Theme.Fonts.codeCaption)
                             .foregroundStyle(Theme.Colors.neonGreen.opacity(0.8))
-                        Text("-\(summary.deletions)")
+                        Text("-\(totals.deletions)")
                             .font(Theme.Fonts.codeCaption)
                             .foregroundStyle(Theme.Colors.hotPink.opacity(0.8))
                     }
+                    .transition(.opacity)
                 } else {
                     Text("No changes yet")
                         .font(Theme.Fonts.caption)
@@ -84,6 +121,18 @@ struct SessionCardView: View {
         }
         .padding(Theme.Spacing.md)
         .glassCard()
+        .animation(.easeInOut(duration: 0.2), value: changeTotals)
+        // Compute change totals only once this card is actually on screen, and
+        // re-run when the session changes. SwiftUI cancels the task when the row
+        // scrolls away, which releases the store's concurrency slot.
+        .task(id: session.time.updated) {
+            guard let connectionManager, let client = connectionManager.activeAPIClient else { return }
+            await changeStore.load(
+                session: session,
+                serverID: connectionManager.activeServerID,
+                client: client
+            )
+        }
     }
 
     // MARK: - Computed

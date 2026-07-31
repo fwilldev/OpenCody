@@ -40,7 +40,7 @@ struct iPadUtilitiesPanel: View {
             header
 
             Divider()
-                .overlay(Color.white.opacity(0.08))
+                .overlay(Theme.Colors.border)
 
             content
         }
@@ -48,7 +48,7 @@ struct iPadUtilitiesPanel: View {
         .background(Theme.Colors.carbon)
         .overlay(
             Rectangle()
-                .fill(Color.white.opacity(0.06))
+                .fill(Theme.Colors.hairline)
                 .frame(width: 1),
             alignment: .leading
         )

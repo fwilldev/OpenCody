@@ -4,7 +4,7 @@ struct PrimaryGlassButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(Theme.Fonts.body.weight(.semibold))
-            .foregroundStyle(.white)
+            .foregroundStyle(Theme.Colors.onPrimaryAccent)
             .padding(.horizontal, Theme.Spacing.md)
             .padding(.vertical, Theme.Spacing.sm)
             .background(Theme.Colors.cyberBlue.opacity(0.25))
@@ -26,9 +26,9 @@ struct SecondaryGlassButtonStyle: ButtonStyle {
             .padding(.horizontal, Theme.Spacing.md)
             .padding(.vertical, Theme.Spacing.sm)
             .background(.ultraThinMaterial)
-            .background(Color.black.opacity(0.2))
+            .background(Theme.Colors.glassFillSoft)
             .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.button))
-            .overlay(RoundedRectangle(cornerRadius: Theme.Radius.button).stroke(Color.white.opacity(Theme.Glass.borderOpacity), lineWidth: 1))
+            .overlay(RoundedRectangle(cornerRadius: Theme.Radius.button).stroke(Theme.Colors.border, lineWidth: 1))
             .scaleEffect(configuration.isPressed ? 0.96 : 1.0)
             .opacity(configuration.isPressed ? 0.75 : 1.0)
             .animation(.easeInOut(duration: 0.12), value: configuration.isPressed)
@@ -39,7 +39,7 @@ struct DestructiveGlassButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(Theme.Fonts.body.weight(.semibold))
-            .foregroundStyle(.white)
+            .foregroundStyle(Theme.Colors.onDestructiveAccent)
             .padding(.horizontal, Theme.Spacing.md)
             .padding(.vertical, Theme.Spacing.sm)
             .background(Theme.Colors.hotPink.opacity(0.25))

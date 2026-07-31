@@ -203,13 +203,14 @@ final class ChatViewModel {
         let wasFullyLoaded = !hasMoreMessages && visibleMessageCount > 0
 
         do {
-            let api = MessageAPI(client: client)
+            let api = MessageAPI(client: client, directory: session.directory)
             let responses = try await api.list(sessionID: session.id)
             messages = responses.map { $0.toModel() }
             loadedMessageIDs = Set(messages.map(\.id))
             refreshFilteredMessages()
             updatePaginationState(wasFullyLoaded: wasFullyLoaded)
             await refreshPendingQuestions(client: client)
+            await refreshPendingPermission(client: client)
             restoreAgentModelFromMessages()
             // Load server-side defaults (agent + model) when none were set from message history.
             // This ensures new/empty sessions reflect the server's configured defaults.
@@ -226,7 +227,7 @@ final class ChatViewModel {
     /// Queries the server for the current session status and updates `sessionStatus`.
     /// Called after loading messages to ensure the UI reflects the true server state.
     private func syncGeneratingStatus(client: APIClient) async {
-        let sessionAPI = SessionAPI(client: client)
+        let sessionAPI = SessionAPI(client: client, directory: session.directory)
         if let statusMap = try? await sessionAPI.status() {
             let status = statusMap[session.id] ?? .idle
             sessionStatus = status
@@ -273,7 +274,7 @@ final class ChatViewModel {
         error = nil
 
         do {
-            let api = MessageAPI(client: client)
+            let api = MessageAPI(client: client, directory: session.directory)
             try await api.promptAsync(
                 sessionID: session.id,
                 text: text,
@@ -306,7 +307,11 @@ final class ChatViewModel {
 
         do {
             let api = CommandAPI(client: client)
-            try await api.execute(sessionID: session.id, name: name, arguments: arguments)
+            try await api.execute(
+                sessionID: session.id,
+                command: name,
+                arguments: arguments ?? ""
+            )
             startFallbackPollingIfNeeded()
         } catch {
             isLocallyGenerating = false
@@ -327,7 +332,7 @@ final class ChatViewModel {
         error = nil
 
         do {
-            let api = SessionAPI(client: client)
+            let api = SessionAPI(client: client, directory: session.directory)
             try await api.shell(id: session.id, command: command, agent: selectedAgentID ?? "coder", providerID: selectedProviderID, modelID: selectedModelID)
             startFallbackPollingIfNeeded()
         } catch {
@@ -342,7 +347,7 @@ final class ChatViewModel {
             throw OpenCodeError.connectionFailed("No active server connection")
         }
 
-        let api = SessionAPI(client: client)
+        let api = SessionAPI(client: client, directory: session.directory)
         try await api.abort(id: session.id)
         // Reset immediately as a fallback.
         // Normally the server sends a session.idle SSE event, but if SSE
@@ -361,17 +366,28 @@ final class ChatViewModel {
     }
 
     /// Reply to a pending permission request.
-    func replyToPermission(_ permission: Permission, allow: Bool) async throws {
+    ///
+    /// Routes through `PermissionAPI`, which picks the v1/v2 endpoint from the
+    /// request's `variant` and falls back to the deprecated per-session route on
+    /// servers that predate the dedicated permission endpoints.
+    func replyToPermission(_ permission: Permission, decision: PermissionReplyDecision) async throws {
         guard let client = connectionManager.activeAPIClient else {
             throw OpenCodeError.connectionFailed("No active server connection")
         }
 
-        let api = SessionAPI(client: client)
-        try await api.replyToPermission(
-            sessionID: session.id,
-            permissionID: permission.id,
-            response: allow ? "allow" : "deny"
-        )
+        // Clear optimistically so the sheet dismisses even if the reply is slow.
+        if pendingPermission?.id == permission.id {
+            pendingPermission = nil
+        }
+
+        let api = PermissionAPI(client: client)
+        do {
+            try await api.reply(to: permission, decision: decision)
+        } catch {
+            // Restore the prompt so the user can retry.
+            pendingPermission = permission
+            throw error
+        }
     }
 
     /// Reply to a pending question request.
@@ -662,13 +678,19 @@ final class ChatViewModel {
 
         case .sessionDiff(let payload):
             guard payload.sessionID == session.id else { return }
-            // Diff data arrived — if our session still lacks a summary, re-fetch.
-            if session.summary == nil || session.summary?.files == 0 {
-                Task { [weak self] in
-                    guard let self, let client = self.connectionManager.activeAPIClient else { return }
-                    if let updated = try? await SessionAPI(client: client).get(id: payload.sessionID) {
-                        self.session = updated
-                    }
+            // Only re-fetch when the event actually carries diff data.
+            //
+            // The server publishes `session.diff` with a hardcoded empty array and
+            // resets `Session.summary` to {0, 0, 0} at the same time, so an
+            // unconditional re-fetch here fired on every event and could never
+            // recover a summary. Real per-turn diffs come from the message list —
+            // see `SessionChangeSet`.
+            guard !payload.diff.isEmpty else { return }
+            Task { [weak self] in
+                guard let self, let client = self.connectionManager.activeAPIClient else { return }
+                if let updated = try? await SessionAPI(client: client, directory: self.session.directory)
+                    .get(id: payload.sessionID) {
+                    self.session = updated
                 }
             }
 
@@ -783,7 +805,7 @@ final class ChatViewModel {
     /// handles termination. This prevents killing the poll while a question is pending.
     private func pollSessionStatus() async {
         guard let client = connectionManager.activeAPIClient else { return }
-        let sessionAPI = SessionAPI(client: client)
+        let sessionAPI = SessionAPI(client: client, directory: session.directory)
         if let statusMap = try? await sessionAPI.status() {
             let status = statusMap[session.id] ?? .idle
 #if DEBUG
@@ -806,8 +828,8 @@ final class ChatViewModel {
     /// Poll the message list until a new assistant message appears or generation ends.
     private func pollForCompletion() async {
         guard let client = connectionManager.activeAPIClient else { return }
-        let api = MessageAPI(client: client)
-        let sessionAPI = SessionAPI(client: client)
+        let api = MessageAPI(client: client, directory: session.directory)
+        let sessionAPI = SessionAPI(client: client, directory: session.directory)
         let questionAPI = QuestionAPI(client: client)
 
         var attempts = 0
@@ -934,6 +956,21 @@ final class ChatViewModel {
     private func refreshPendingQuestions(client: APIClient) async {
         let api = QuestionAPI(client: client)
         await refreshPendingQuestions(api: api)
+    }
+
+    /// Recover a permission request that was asked while the app was not listening.
+    ///
+    /// `permission.asked` arrives over SSE, so a request raised while the app was
+    /// backgrounded (or before the stream connected) would otherwise never be
+    /// shown and the session would appear silently stuck. Re-reading the pending
+    /// list on load closes that gap.
+    private func refreshPendingPermission(client: APIClient) async {
+        // Don't clobber a request the user is already looking at.
+        guard pendingPermission == nil else { return }
+
+        let api = PermissionAPI(client: client)
+        guard let pending = try? await api.listAll(directory: session.directory) else { return }
+        pendingPermission = pending.first { $0.sessionID == session.id }
     }
 
     /// Refresh pending questions from REST, merging with confirmed state.

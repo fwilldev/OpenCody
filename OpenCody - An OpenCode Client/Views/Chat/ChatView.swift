@@ -95,23 +95,32 @@ struct ChatView: View {
 
                             ForEach(viewModel.displayMessages) { msgWithParts in
                                 MessageBubbleView(messageWithParts: msgWithParts, viewModel: viewModel)
+                                    .transition(
+                                        .asymmetric(
+                                            insertion: .move(edge: .bottom)
+                                                .combined(with: .opacity)
+                                                .combined(with: .scale(
+                                                    scale: 0.96,
+                                                    anchor: msgWithParts.message.role == .user ? .bottomTrailing : .bottomLeading
+                                                )),
+                                            removal: .opacity
+                                        )
+                                    )
                             }
 
                             // Typing indicator while waiting for AI response
                             if viewModel.isGenerating {
-                                HStack(spacing: 8) {
-                                    ProgressView()
-                                        .tint(Theme.Colors.cyberBlue)
-                                        .scaleEffect(0.7)
-                                    Text("Generating…")
-                                        .font(Theme.Fonts.caption)
-                                        .foregroundStyle(Theme.Colors.smoke)
-                                }
-                                .padding(.vertical, Theme.Spacing.sm)
-                                .padding(.horizontal, Theme.Spacing.md)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .transition(.opacity.combined(with: .move(edge: .bottom)))
-                                .animation(.easeInOut(duration: 0.2), value: viewModel.isGenerating)
+                                TypingIndicatorView()
+                                    .padding(.vertical, Theme.Spacing.xs)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .transition(
+                                        .asymmetric(
+                                            insertion: .move(edge: .bottom)
+                                                .combined(with: .opacity)
+                                                .combined(with: .scale(scale: 0.9, anchor: .bottomLeading)),
+                                            removal: .opacity
+                                        )
+                                    )
                             }
 
                             // Hidden steps indicator
@@ -128,10 +137,10 @@ struct ChatView: View {
                                 .padding(.horizontal, 12)
                                 .background(
                                     Capsule()
-                                        .fill(Color.white.opacity(0.04))
+                                        .fill(Theme.Colors.fillSubtle)
                                         .overlay(
                                             Capsule()
-                                                .stroke(Color.white.opacity(0.06), lineWidth: 1)
+                                                .stroke(Theme.Colors.hairline, lineWidth: 1)
                                         )
                                 )
                                 .frame(maxWidth: .infinity)
@@ -143,6 +152,11 @@ struct ChatView: View {
                         }
                         .padding(.horizontal, Theme.Spacing.md)
                         .padding(.vertical, Theme.Spacing.sm)
+                        // Animate message arrival (new bubbles slide up) and the
+                        // typing indicator. Keyed on count so streaming updates and
+                        // local-to-server ID swaps don't re-trigger transitions.
+                        .animation(.spring(response: 0.38, dampingFraction: 0.8), value: viewModel.displayMessages.count)
+                        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: viewModel.isGenerating)
                         // Track scroll position to detect when user scrolls away from bottom
                         .onGeometryChange(for: CGFloat.self) { geo in
                             geo.frame(in: .named("chatScroll")).maxY
@@ -244,7 +258,7 @@ struct ChatView: View {
     @ViewBuilder
     private func permissionOverlay(permission: Permission) -> some View {
         ZStack {
-            Color.black.opacity(0.6)
+            Theme.Colors.scrim
                 .ignoresSafeArea()
 
             VStack(spacing: Theme.Spacing.md) {
@@ -256,15 +270,27 @@ struct ChatView: View {
                     .font(.headline)
                     .foregroundStyle(Theme.Colors.cloud)
 
-                Text("Tool: \(permission.id)")
+                Text(permission.displayTitle)
                     .font(.subheadline)
                     .foregroundStyle(Theme.Colors.silver)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, Theme.Spacing.md)
 
+                if let pattern = permission.primaryPattern, pattern != permission.displayTitle {
+                    Text(pattern)
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(Theme.Colors.cloud)
+                        .multilineTextAlignment(.center)
+                        .lineLimit(3)
+                        .padding(8)
+                        .background(Theme.Colors.graphite)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .padding(.horizontal, Theme.Spacing.md)
+                }
+
                 HStack(spacing: Theme.Spacing.md) {
                     Button("Deny") {
-                        Task { try? await viewModel.replyToPermission(permission, allow: false) }
+                        Task { try? await viewModel.replyToPermission(permission, decision: .reject) }
                     }
                     .foregroundStyle(Theme.Colors.hotPink)
                     .padding(.horizontal, Theme.Spacing.lg)
@@ -279,7 +305,7 @@ struct ChatView: View {
                     )
 
                     Button("Allow") {
-                        Task { try? await viewModel.replyToPermission(permission, allow: true) }
+                        Task { try? await viewModel.replyToPermission(permission, decision: .once) }
                     }
                     .foregroundStyle(Theme.Colors.cyberBlue)
                     .padding(.horizontal, Theme.Spacing.lg)
@@ -293,6 +319,14 @@ struct ChatView: View {
                             )
                     )
                 }
+
+                if permission.supportsAlways {
+                    Button("Always Allow") {
+                        Task { try? await viewModel.replyToPermission(permission, decision: .always) }
+                    }
+                    .font(.footnote.weight(.medium))
+                    .foregroundStyle(Theme.Colors.silver)
+                }
             }
             .padding(Theme.Spacing.lg)
             .background(
@@ -300,13 +334,13 @@ struct ChatView: View {
                     .fill(.ultraThinMaterial)
                     .overlay(
                         RoundedRectangle(cornerRadius: 20)
-                            .fill(Color.black.opacity(0.3))
+                            .fill(Theme.Colors.glassFill)
                     )
                     .overlay(
                         RoundedRectangle(cornerRadius: 20)
-                            .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                            .stroke(Theme.Colors.border, lineWidth: 1)
                     )
-                    .shadow(color: Color.black.opacity(0.4), radius: 12)
+                    .shadow(color: Theme.Colors.shadow, radius: 12)
             )
             .padding(.horizontal, Theme.Spacing.xl)
         }

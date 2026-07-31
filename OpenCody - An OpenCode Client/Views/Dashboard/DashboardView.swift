@@ -369,8 +369,8 @@ private struct SkeletonCard: View {
     private var shimmerGradient: LinearGradient {
         LinearGradient(
             colors: [
-                Color.white.opacity(shimmer ? 0.10 : 0.04),
-                Color.white.opacity(shimmer ? 0.04 : 0.10)
+                Theme.Colors.cloud.opacity(shimmer ? 0.10 : 0.04),
+                Theme.Colors.cloud.opacity(shimmer ? 0.04 : 0.10)
             ],
             startPoint: .leading,
             endPoint: .trailing

@@ -58,7 +58,7 @@ struct ToolPartView: View {
 
             if isExpanded {
                 Divider()
-                    .background(Color.white.opacity(0.06))
+                    .background(Theme.Colors.hairline)
 
                 VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
                     // Input section
@@ -75,7 +75,7 @@ struct ToolPartView: View {
                 .fill(Theme.Colors.graphite)
                 .overlay(
                     RoundedRectangle(cornerRadius: 10)
-                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                        .stroke(Theme.Colors.border, lineWidth: 1)
                 )
         )
         .onAppear {

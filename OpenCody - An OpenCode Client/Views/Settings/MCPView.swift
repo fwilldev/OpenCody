@@ -91,10 +91,19 @@ struct MCPView: View {
                         onDisconnect: { Task { await disconnect(name: entry.name) } }
                     )
                     .contextMenu {
-                        Button(role: .destructive) {
-                            Task { await remove(name: entry.name) }
+                        // MCP servers come from server-side configuration and cannot
+                        // be deleted over the API — offer the actions that exist:
+                        // disconnect, and clearing stored OAuth credentials.
+                        Button {
+                            Task { await disconnect(name: entry.name) }
                         } label: {
-                            Label("Remove", systemImage: "trash")
+                            Label("Disconnect", systemImage: "bolt.slash")
+                        }
+
+                        Button(role: .destructive) {
+                            Task { await signOut(name: entry.name) }
+                        } label: {
+                            Label("Remove Saved Login", systemImage: "person.badge.minus")
                         }
                     }
                 }
@@ -149,13 +158,16 @@ struct MCPView: View {
         pendingAction = nil
     }
 
-    private func remove(name: String) async {
+    /// Clear the server's stored OAuth credentials so it re-authenticates next connect.
+    private func signOut(name: String) async {
+        pendingAction = name
         do {
-            try await mcpAPI.remove(name: name)
-            statusMap.removeValue(forKey: name)
+            try await mcpAPI.removeOAuth(name: name)
         } catch {
-            await loadServers()
+            // Server may have no stored credentials — either way, refresh the state.
         }
+        await loadServers()
+        pendingAction = nil
     }
 }
 

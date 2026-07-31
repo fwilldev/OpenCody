@@ -35,7 +35,7 @@ struct FilePartView: View {
                 .fill(Theme.Colors.graphite)
                 .overlay(
                     RoundedRectangle(cornerRadius: 8)
-                        .stroke(Color.white.opacity(0.06), lineWidth: 1)
+                        .stroke(Theme.Colors.hairline, lineWidth: 1)
                 )
         )
     }

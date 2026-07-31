@@ -17,9 +17,13 @@ struct MessageBubbleView: View {
 
     private var roleLabel: String {
         switch messageWithParts.message.role {
-        case .user: return "You"
-        case .assistant: return "Assistant"
+        case .user: return "you"
+        case .assistant: return "opencode"
         }
+    }
+
+    private var isUser: Bool {
+        messageWithParts.message.role == .user
     }
 
     private var roleColor: Color {
@@ -63,12 +67,32 @@ struct MessageBubbleView: View {
         // Guard against millisecond timestamps (values > year 3000 in seconds)
         let raw = createdAt
         let seconds = raw > 1_000_000_000_000 ? raw / 1000 : raw
+        let date = Date(timeIntervalSince1970: seconds)
+        // Fresh messages would render as "in 0 sec" due to clock skew — show "now".
+        if abs(date.timeIntervalSinceNow) < 60 { return "now" }
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .abbreviated
-        return formatter.localizedString(for: Date(timeIntervalSince1970: seconds), relativeTo: Date())
+        return formatter.localizedString(for: date, relativeTo: Date())
     }
 
     var body: some View {
+        HStack(alignment: .bottom, spacing: 0) {
+            // User messages sit on the trailing edge like a classic chat;
+            // assistant messages keep the full width for code and tool output.
+            if isUser {
+                Spacer(minLength: Theme.Spacing.xxl)
+            }
+
+            bubbleCard
+
+            if !isUser {
+                Spacer(minLength: 0)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: isUser ? .trailing : .leading)
+    }
+
+    private var bubbleCard: some View {
         VStack(alignment: .leading, spacing: 0) {
             // Header row
             HStack(alignment: .center, spacing: Theme.Spacing.sm) {
@@ -81,16 +105,16 @@ struct MessageBubbleView: View {
                         .foregroundStyle(roleColor)
                 }
                 Text(roleLabel)
-                    .font(.caption.bold())
+                    .font(.system(.caption, design: .monospaced, weight: .bold))
                     .foregroundStyle(roleColor)
                 Spacer()
                 if isLocalPending {
                     Text("Sending…")
-                        .font(.caption2)
+                        .font(.system(.caption2, design: .monospaced))
                         .foregroundStyle(Theme.Colors.smoke)
                 } else {
                     Text(timestamp)
-                        .font(.caption2)
+                        .font(.system(.caption2, design: .monospaced))
                         .foregroundStyle(Theme.Colors.smoke)
                 }
             }
@@ -116,11 +140,14 @@ struct MessageBubbleView: View {
             }
         }
         .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(Theme.Colors.carbon)
+            RoundedRectangle(cornerRadius: 14)
+                .fill(isUser ? Theme.Colors.cyberBlue.opacity(0.09) : Theme.Colors.carbon)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(Color.white.opacity(0.06), lineWidth: 1)
+                    RoundedRectangle(cornerRadius: 14)
+                        .stroke(
+                            isUser ? Theme.Colors.cyberBlue.opacity(0.22) : Theme.Colors.hairline,
+                            lineWidth: 1
+                        )
                 )
         )
         .opacity(isLocalPending ? 0.7 : 1.0)

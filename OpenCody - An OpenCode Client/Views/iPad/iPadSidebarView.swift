@@ -365,10 +365,10 @@ struct iPadSidebarView: View {
 
     private var glassRowBackground: some View {
         RoundedRectangle(cornerRadius: 12)
-            .fill(Color.black.opacity(0.3))
+            .fill(Theme.Colors.glassFill)
             .overlay(
                 RoundedRectangle(cornerRadius: 12)
-                    .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                    .stroke(Theme.Colors.border, lineWidth: 1)
             )
     }
 

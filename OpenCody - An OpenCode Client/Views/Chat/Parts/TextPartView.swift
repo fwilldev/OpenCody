@@ -34,7 +34,7 @@ struct TextPartView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 8))
                 .overlay(
                     RoundedRectangle(cornerRadius: 8)
-                        .stroke(Color.white.opacity(0.06), lineWidth: 1)
+                        .stroke(Theme.Colors.hairline, lineWidth: 1)
                 )
         }
 

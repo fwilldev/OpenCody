@@ -51,8 +51,8 @@ struct SessionSummaryView: View {
                             .background(
                                 RoundedRectangle(cornerRadius: 16)
                                     .fill(.ultraThinMaterial)
-                                    .overlay(RoundedRectangle(cornerRadius: 16).fill(Color.black.opacity(0.3)))
-                                    .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.08), lineWidth: 1))
+                                    .overlay(RoundedRectangle(cornerRadius: 16).fill(Theme.Colors.glassFill))
+                                    .overlay(RoundedRectangle(cornerRadius: 16).stroke(Theme.Colors.border, lineWidth: 1))
                             )
                     }
                     .padding(Theme.Spacing.lg)

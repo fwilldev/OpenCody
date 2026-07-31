@@ -28,7 +28,7 @@ struct ReasoningPartView: View {
 
             if isExpanded {
                 Divider()
-                    .background(Color.white.opacity(0.06))
+                    .background(Theme.Colors.hairline)
 
                 Text(part.text)
                     .font(.subheadline.italic())

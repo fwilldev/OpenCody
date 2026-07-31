@@ -22,11 +22,11 @@ enum SSEEvent: Sendable {
     case messagePartRemoved(PartRemovePayload)
     case messagePartDelta(PartDeltaPayload)
 
-    // Permission events
+    // Permission events (covers both `permission.asked` and `permission.v2.asked`)
     case permissionUpdated(Permission)
     case permissionReplied(PermissionRepliedPayload)
 
-    // Question events
+    // Question events (covers both `question.asked` and `question.v2.asked`)
     case questionAsked(QuestionRequest)
     case questionReplied(QuestionRepliedPayload)
     case questionRejected(QuestionRejectedPayload)
@@ -44,9 +44,41 @@ enum SSEEvent: Sendable {
     // VCS events
     case vcsBranchUpdated(VcsBranchUpdatedPayload)
 
+    // Project events
+    case projectUpdated(Project)
+    case projectDirectoriesUpdated(projectID: String)
+
+    // Workspace / worktree events
+    case workspaceReady(name: String)
+    case workspaceFailed(message: String)
+    case workspaceStatus(WorkspaceStatusPayload)
+    case worktreeReady(name: String, branch: String?)
+    case worktreeFailed(message: String)
+
+    // MCP events
+    case mcpToolsChanged(server: String)
+    case mcpBrowserOpenFailed(McpBrowserOpenFailedPayload)
+
     // Server events
     case serverConnected
     case serverInstanceDisposed(ServerInstanceDisposedPayload)
+    case globalDisposed
+    /// Periodic keep-alive. Carries no data, but receiving it resets the client's
+    /// heartbeat watchdog so an idle stream is not mistaken for a dead one.
+    case serverHeartbeat
+
+    /// A `sync` envelope wrapping a versioned event (`session.created.1`, …).
+    ///
+    /// Intentionally inert: the server emits every sync event **alongside** its
+    /// plain equivalent (`session.created`), so acting on both would apply each
+    /// change twice. Kept as a distinct case rather than `.unknown` to record
+    /// that the omission is deliberate.
+    case syncEnvelope
+
+    /// A server-side catalog/config reload that invalidates cached lists
+    /// (integrations, references, catalog entries). The associated value is the
+    /// originating event name.
+    case serverStateChanged(String)
 
     // Installation events
     case installationUpdated(InstallationUpdatedPayload)
@@ -55,6 +87,19 @@ enum SSEEvent: Sendable {
     // LSP events
     case lspClientDiagnostics(LspClientDiagnosticsPayload)
     case lspUpdated
+
+    // Catalog / provider events
+    case catalogModelUpdated
+    case modelsDevRefreshed
+    case pluginAdded(id: String)
+    case accountChanged
+
+    /// Streaming lifecycle events from the `session.next.*` family.
+    ///
+    /// The server emits these alongside the `message.*` events the UI already
+    /// consumes; they are surfaced as one case so subscribers can react to
+    /// generation progress without matching ~30 individual event names.
+    case sessionStreamEvent(SessionStreamPayload)
 
     // Unknown catch-all
     case unknown(eventName: String, data: String)
@@ -118,23 +163,25 @@ enum SSEEvent: Sendable {
         case "message.part.delta":
             let payload = try decoder.decode(EventPayload<PartDeltaPayload>.self, from: jsonData)
             return .messagePartDelta(payload.properties)
-        case "permission.updated", "permission.asked":
+        // `Permission` decodes both the v1 and v2 payload shapes and records which
+        // one it saw, so the reply can be routed to the matching endpoint.
+        case "permission.updated", "permission.asked", "permission.v2.asked":
             let payload = try decoder.decode(EventPayload<Permission>.self, from: jsonData)
             return .permissionUpdated(payload.properties)
 
-        case "permission.replied":
+        case "permission.replied", "permission.v2.replied":
             let payload = try decoder.decode(EventPayload<PermissionRepliedPayload>.self, from: jsonData)
             return .permissionReplied(payload.properties)
 
-        case "question.asked":
+        case "question.asked", "question.v2.asked":
             let payload = try decoder.decode(EventPayload<QuestionRequest>.self, from: jsonData)
             return .questionAsked(payload.properties)
 
-        case "question.replied":
+        case "question.replied", "question.v2.replied":
             let payload = try decoder.decode(EventPayload<QuestionRepliedPayload>.self, from: jsonData)
             return .questionReplied(payload.properties)
 
-        case "question.rejected":
+        case "question.rejected", "question.v2.rejected":
             let payload = try decoder.decode(EventPayload<QuestionRejectedPayload>.self, from: jsonData)
             return .questionRejected(payload.properties)
 
@@ -180,7 +227,88 @@ enum SSEEvent: Sendable {
         case "lsp.updated":
             return .lspUpdated
 
+        // MARK: Project
+
+        case "project.updated":
+            let payload = try decoder.decode(EventPayload<Project>.self, from: jsonData)
+            return .projectUpdated(payload.properties)
+
+        case "project.directories.updated":
+            let payload = try decoder.decode(EventPayload<ProjectIDPayload>.self, from: jsonData)
+            return .projectDirectoriesUpdated(projectID: payload.properties.projectID)
+
+        // MARK: Workspace / worktree
+
+        case "workspace.ready":
+            let payload = try decoder.decode(EventPayload<NamePayload>.self, from: jsonData)
+            return .workspaceReady(name: payload.properties.name)
+
+        case "workspace.failed":
+            let payload = try decoder.decode(EventPayload<MessagePayload>.self, from: jsonData)
+            return .workspaceFailed(message: payload.properties.message)
+
+        case "workspace.status":
+            let payload = try decoder.decode(EventPayload<WorkspaceStatusPayload>.self, from: jsonData)
+            return .workspaceStatus(payload.properties)
+
+        case "worktree.ready":
+            let payload = try decoder.decode(EventPayload<WorktreeReadyPayload>.self, from: jsonData)
+            return .worktreeReady(name: payload.properties.name, branch: payload.properties.branch)
+
+        case "worktree.failed":
+            let payload = try decoder.decode(EventPayload<MessagePayload>.self, from: jsonData)
+            return .worktreeFailed(message: payload.properties.message)
+
+        // MARK: MCP
+
+        case "mcp.tools.changed":
+            let payload = try decoder.decode(EventPayload<ServerNamePayload>.self, from: jsonData)
+            return .mcpToolsChanged(server: payload.properties.server)
+
+        case "mcp.browser.open.failed":
+            let payload = try decoder.decode(EventPayload<McpBrowserOpenFailedPayload>.self, from: jsonData)
+            return .mcpBrowserOpenFailed(payload.properties)
+
+        // MARK: Catalog / providers / plugins
+
+        case "catalog.model.updated", "catalog.updated":
+            return .catalogModelUpdated
+
+        case "models-dev.refreshed":
+            return .modelsDevRefreshed
+
+        case "integration.updated", "reference.updated":
+            return .serverStateChanged(eventName)
+
+        case "server.heartbeat":
+            return .serverHeartbeat
+
+        case "sync":
+            // Duplicate of the plain event emitted next to it — see `syncEnvelope`.
+            return .syncEnvelope
+
+        case "plugin.added":
+            let payload = try decoder.decode(EventPayload<IDPayload>.self, from: jsonData)
+            return .pluginAdded(id: payload.properties.id)
+
+        case "account.added", "account.removed", "account.switched":
+            // Any account change invalidates the cached provider list.
+            return .accountChanged
+
+        case "global.disposed":
+            return .globalDisposed
+
         default:
+            // The `session.next.*` family carries streaming progress. They are
+            // collapsed into one case so subscribers can observe generation
+            // progress without enumerating every event name.
+            if eventName.hasPrefix("session.next.") {
+                let stage = String(eventName.dropFirst("session.next.".count))
+                if let payload = try? decoder.decode(EventPayload<SessionStreamPayload>.self, from: jsonData) {
+                    return .sessionStreamEvent(payload.properties.withStage(stage))
+                }
+                return .sessionStreamEvent(SessionStreamPayload(stage: stage, sessionID: ""))
+            }
             return .unknown(eventName: eventName, data: data)
         }
     }
@@ -391,18 +519,30 @@ struct PartDeltaPayload: Decodable, Sendable {
     }
 }
 
+/// Payload of `permission.replied` / `permission.v2.replied`.
+///
+/// Older servers named the fields `permissionID` / `response`; current ones use
+/// `requestID` / `reply`. Both are accepted.
 struct PermissionRepliedPayload: Decodable, Sendable {
     let sessionID: String
-    let permissionID: String
-    let response: String
+    let requestID: String
+    let reply: String
+
+    /// Legacy alias for `requestID`.
+    var permissionID: String { requestID }
+    /// Legacy alias for `reply`.
+    var response: String { reply }
 
     private enum CodingKeys: String, CodingKey {
         case sessionID
         case sessionIDCamel = "sessionId"
         case sessionIDSnake = "session_id"
+        case requestID
+        case requestIDCamel = "requestId"
         case permissionID
         case permissionIDCamel = "permissionId"
         case permissionIDSnake = "permission_id"
+        case reply
         case response
     }
 
@@ -413,12 +553,17 @@ struct PermissionRepliedPayload: Decodable, Sendable {
             ?? (try? container.decodeIfPresent(String.self, forKey: .sessionIDCamel))
             ?? (try? container.decodeIfPresent(String.self, forKey: .sessionIDSnake))
             ?? ""
-        permissionID =
-            (try? container.decodeIfPresent(String.self, forKey: .permissionID))
+        requestID =
+            (try? container.decodeIfPresent(String.self, forKey: .requestID))
+            ?? (try? container.decodeIfPresent(String.self, forKey: .requestIDCamel))
+            ?? (try? container.decodeIfPresent(String.self, forKey: .permissionID))
             ?? (try? container.decodeIfPresent(String.self, forKey: .permissionIDCamel))
             ?? (try? container.decodeIfPresent(String.self, forKey: .permissionIDSnake))
             ?? ""
-        response = (try? container.decodeIfPresent(String.self, forKey: .response)) ?? ""
+        reply =
+            (try? container.decodeIfPresent(String.self, forKey: .reply))
+            ?? (try? container.decodeIfPresent(String.self, forKey: .response))
+            ?? ""
     }
 }
 
@@ -468,6 +613,140 @@ struct InstallationUpdateAvailablePayload: Codable, Sendable {
 struct LspClientDiagnosticsPayload: Codable, Sendable {
     let serverID: String
     let path: String
+}
+
+// MARK: - Generic Single-Field Payloads
+
+/// `{ id }` — used by `plugin.added`.
+struct IDPayload: Decodable, Sendable {
+    let id: String
+}
+
+/// `{ name }` — used by `workspace.ready`.
+struct NamePayload: Decodable, Sendable {
+    let name: String
+}
+
+/// `{ message }` — used by `workspace.failed` and `worktree.failed`.
+struct MessagePayload: Decodable, Sendable {
+    let message: String
+}
+
+/// `{ projectID }` — used by `project.directories.updated`.
+struct ProjectIDPayload: Decodable, Sendable {
+    let projectID: String
+}
+
+/// `{ server }` — used by `mcp.tools.changed`.
+struct ServerNamePayload: Decodable, Sendable {
+    let server: String
+}
+
+// MARK: - Workspace Payloads
+
+/// Payload of `workspace.status`.
+struct WorkspaceStatusPayload: Decodable, Sendable {
+    enum Status: String, Decodable, Sendable {
+        case connected
+        case connecting
+        case disconnected
+        case error
+    }
+
+    let workspaceID: String
+    let status: Status
+}
+
+/// Payload of `worktree.ready`.
+struct WorktreeReadyPayload: Decodable, Sendable {
+    let name: String
+    let branch: String?
+}
+
+// MARK: - MCP Payloads
+
+/// Payload of `mcp.browser.open.failed` — the host could not open the OAuth URL,
+/// so the client should present it instead.
+struct McpBrowserOpenFailedPayload: Decodable, Sendable {
+    let mcpName: String
+    let url: String
+}
+
+// MARK: - SessionStreamPayload
+
+/// Payload of the `session.next.*` streaming event family.
+///
+/// The family covers text/reasoning/tool deltas, step boundaries, compaction, and
+/// retries. All members share `sessionID` and a timestamp; the remaining fields
+/// vary, so everything beyond the common core is optional. `stage` holds the event
+/// name with the `session.next.` prefix stripped (e.g. `"text.delta"`).
+struct SessionStreamPayload: Decodable, Sendable {
+    /// Event name minus the `session.next.` prefix.
+    var stage: String
+    let sessionID: String
+    let timestamp: Double?
+    let messageID: String?
+    let assistantMessageID: String?
+    /// Incremental text for `text.delta`, `reasoning.delta`, `tool.input.delta`.
+    let delta: String?
+    /// Completed text for `*.ended` events.
+    let text: String?
+    let callID: String?
+    /// Tool name for `tool.called`.
+    let tool: String?
+    let attempt: Int?
+    let finish: String?
+    let cost: Double?
+
+    /// Whether this event carries streamed text the UI can append.
+    var isTextDelta: Bool { stage == "text.delta" }
+    /// Whether this event carries streamed reasoning the UI can append.
+    var isReasoningDelta: Bool { stage == "reasoning.delta" }
+    /// Whether this event ends an assistant step.
+    var isStepEnd: Bool { stage == "step.ended" || stage == "step.failed" }
+
+    private enum CodingKeys: String, CodingKey {
+        case sessionID, timestamp, messageID, assistantMessageID
+        case delta, text, callID, tool, attempt, finish, cost
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        stage = ""
+        sessionID = (try? c.decodeIfPresent(String.self, forKey: .sessionID)) ?? ""
+        timestamp = try? c.decodeIfPresent(Double.self, forKey: .timestamp)
+        messageID = try? c.decodeIfPresent(String.self, forKey: .messageID)
+        assistantMessageID = try? c.decodeIfPresent(String.self, forKey: .assistantMessageID)
+        delta = try? c.decodeIfPresent(String.self, forKey: .delta)
+        text = try? c.decodeIfPresent(String.self, forKey: .text)
+        callID = try? c.decodeIfPresent(String.self, forKey: .callID)
+        tool = try? c.decodeIfPresent(String.self, forKey: .tool)
+        attempt = try? c.decodeIfPresent(Int.self, forKey: .attempt)
+        finish = try? c.decodeIfPresent(String.self, forKey: .finish)
+        cost = try? c.decodeIfPresent(Double.self, forKey: .cost)
+    }
+
+    init(stage: String, sessionID: String) {
+        self.stage = stage
+        self.sessionID = sessionID
+        self.timestamp = nil
+        self.messageID = nil
+        self.assistantMessageID = nil
+        self.delta = nil
+        self.text = nil
+        self.callID = nil
+        self.tool = nil
+        self.attempt = nil
+        self.finish = nil
+        self.cost = nil
+    }
+
+    /// Return a copy tagged with the event's stage.
+    func withStage(_ stage: String) -> SessionStreamPayload {
+        var copy = self
+        copy.stage = stage
+        return copy
+    }
 }
 
 // MARK: - GlobalEvent
