@@ -25,6 +25,7 @@ struct GlobalAPI: Sendable {
     /// Preferred over `APIClient.healthCheck()` when the version matters — e.g. to
     /// decide whether an endpoint the client wants is available.
     func health() async throws -> HealthInfo {
+        if client.apiVersion == .v2 { return try await v2Health() }
         let data = try await client.requestData(.get("/global/health"))
         return try JSONDecoder().decode(HealthInfo.self, from: data)
     }
@@ -33,12 +34,14 @@ struct GlobalAPI: Sendable {
 
     /// Get the global (non project-scoped) configuration.
     func config() async throws -> ServerConfig {
+        if client.apiVersion == .v2 { return try await v2Config() }
         let data = try await client.requestData(.get("/global/config"))
         return try JSONDecoder().decode(ServerConfig.self, from: data)
     }
 
     /// Partially update the global configuration.
     func updateConfig(_ config: ServerConfig) async throws -> ServerConfig {
+        if client.apiVersion == .v2 { throw OpenCodeError.unsupported("Editing the configuration") }
         let data = try await client.requestData(.patch("/global/config", body: config))
         return try JSONDecoder().decode(ServerConfig.self, from: data)
     }
@@ -48,6 +51,7 @@ struct GlobalAPI: Sendable {
     /// Upgrade opencode.
     /// - Parameter target: Specific version to install, or `nil` for the latest.
     func upgrade(target: String? = nil) async throws -> UpgradeResult {
+        if client.apiVersion == .v2 { throw OpenCodeError.unsupported("Upgrading the server") }
         let endpoint = APIEndpoint(
             path: "/global/upgrade",
             method: .POST,
@@ -61,11 +65,15 @@ struct GlobalAPI: Sendable {
 
     /// Dispose every opencode instance, releasing all resources.
     func disposeAll() async throws {
+        if client.apiVersion == .v2 { return try await v2DisposeInstance() }
         try await client.requestVoid(APIEndpoint(path: "/global/dispose", method: .POST))
     }
 
     /// Dispose the instance serving one project directory.
     func disposeInstance(directory: String? = nil) async throws {
+        // 2.x applies credential changes live and can only reload *every* location,
+        // which cancels pending permissions and questions — so there is nothing to do.
+        if client.apiVersion == .v2 { return }
         let items = directory.map { [URLQueryItem(name: "directory", value: $0)] }
         try await client.requestVoid(
             APIEndpoint(path: "/instance/dispose", method: .POST, queryItems: items)

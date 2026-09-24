@@ -40,6 +40,7 @@ struct FileAPI: Sendable {
     ///
     /// - Parameter path: Project-relative path (e.g. `"src"`, `"src/views"`).
     func list(path: String, directory: String? = nil) async throws -> [FileNode] {
+        if client.apiVersion == .v2 { return try await v2List(path: path, directory: directory) }
         var items = [URLQueryItem(name: "path", value: path)]
         if let directory {
             items.append(URLQueryItem(name: "directory", value: directory))
@@ -52,6 +53,7 @@ struct FileAPI: Sendable {
     ///
     /// - Parameter path: Project-relative path to the file (e.g. `"src/index.ts"`).
     func content(path: String, directory: String? = nil) async throws -> FileContent {
+        if client.apiVersion == .v2 { return try await v2Content(path: path, directory: directory) }
         var items = [URLQueryItem(name: "path", value: path)]
         if let directory {
             items.append(URLQueryItem(name: "directory", value: directory))
@@ -62,6 +64,7 @@ struct FileAPI: Sendable {
 
     /// Get git status of all changed files, with add/remove counts.
     func status(directory: String? = nil) async throws -> [ChangedFile] {
+        if client.apiVersion == .v2 { return try await v2Status(directory: directory) }
         let items = directory.map { [URLQueryItem(name: "directory", value: $0)] }
         let data = try await client.requestData(.get("/file/status", queryItems: items))
         return try JSONDecoder().decode([ChangedFile].self, from: data)
@@ -82,6 +85,7 @@ struct FileAPI: Sendable {
         directory: String? = nil,
         limit: Int = 20
     ) async throws -> [String] {
+        if client.apiVersion == .v2 { return try await v2FindFiles(query: query, kind: kind, directory: directory, limit: limit) }
         var items = [URLQueryItem(name: "query", value: query)]
         if let kind { items.append(URLQueryItem(name: "type", value: kind.rawValue)) }
         if let directory { items.append(URLQueryItem(name: "directory", value: directory)) }
@@ -94,6 +98,7 @@ struct FileAPI: Sendable {
     ///
     /// - Parameter pattern: A regular expression, as accepted by ripgrep.
     func findText(pattern: String, directory: String? = nil) async throws -> [TextSearchMatch] {
+        if client.apiVersion == .v2 { throw OpenCodeError.unsupported("Text search") }
         var items = [URLQueryItem(name: "pattern", value: pattern)]
         if let directory { items.append(URLQueryItem(name: "directory", value: directory)) }
         let data = try await client.requestData(.get("/find", queryItems: items))
@@ -104,6 +109,7 @@ struct FileAPI: Sendable {
     ///
     /// Returns an empty array when no language server is running for the project.
     func findSymbols(query: String, directory: String? = nil) async throws -> [SymbolInfo] {
+        if client.apiVersion == .v2 { return [] }
         var items = [URLQueryItem(name: "query", value: query)]
         if let directory { items.append(URLQueryItem(name: "directory", value: directory)) }
         let data = try await client.requestData(.get("/find/symbol", queryItems: items))
@@ -114,6 +120,7 @@ struct FileAPI: Sendable {
 
     /// Get resolved paths (home, config, state, worktree, directory) for the instance.
     func path(directory: String? = nil) async throws -> PathInfo {
+        if client.apiVersion == .v2 { throw OpenCodeError.unsupported("Path information") }
         let items = directory.map { [URLQueryItem(name: "directory", value: $0)] }
         let data = try await client.requestData(.get("/path", queryItems: items))
         return try JSONDecoder().decode(PathInfo.self, from: data)
@@ -121,12 +128,14 @@ struct FileAPI: Sendable {
 
     /// List all projects that have been opened with opencode.
     func listProjects() async throws -> [Project] {
+        if client.apiVersion == .v2 { return try await v2ListProjects() }
         let data = try await client.requestData(.get("/project"))
         return try JSONDecoder().decode([Project].self, from: data)
     }
 
     /// Get the project the server currently considers active.
     func currentProject(directory: String? = nil) async throws -> Project {
+        if client.apiVersion == .v2 { return try await v2CurrentProject(directory: directory) }
         let items = directory.map { [URLQueryItem(name: "directory", value: $0)] }
         let data = try await client.requestData(.get("/project/current", queryItems: items))
         return try JSONDecoder().decode(Project.self, from: data)
@@ -137,6 +146,11 @@ struct FileAPI: Sendable {
     /// A project can span several checkouts (worktrees, copies); this returns all
     /// of them so the client can offer a directory picker.
     func projectDirectories(projectID: String) async throws -> [String] {
+        if client.apiVersion == .v2 {
+            // 2.x records one canonical directory per project, plus its sandboxes.
+            let project = try await v2ListProjects().first { $0.id == projectID }
+            return project.map { [$0.worktree] + ($0.sandboxes ?? []) } ?? []
+        }
         let data = try await client.requestData(.get("/project/\(projectID)/directories"))
         return try JSONDecoder().decode([String].self, from: data)
     }
@@ -149,6 +163,7 @@ struct FileAPI: Sendable {
         icon: ProjectIcon? = nil,
         commands: ProjectCommands? = nil
     ) async throws -> Project {
+        if client.apiVersion == .v2 { return try await v2UpdateProject(projectID: projectID, name: name, icon: icon, commands: commands) }
         let body = ProjectUpdateBody(name: name, icon: icon, commands: commands)
         let data = try await client.requestData(.patch("/project/\(projectID)", body: body))
         return try JSONDecoder().decode(Project.self, from: data)
@@ -157,6 +172,7 @@ struct FileAPI: Sendable {
     /// Initialize a git repository for the current project.
     @discardableResult
     func initGit(directory: String? = nil) async throws -> Project {
+        if client.apiVersion == .v2 { throw OpenCodeError.unsupported("Initializing git") }
         let items = directory.map { [URLQueryItem(name: "directory", value: $0)] }
         let data = try await client.requestData(
             APIEndpoint(path: "/project/git/init", method: .POST, queryItems: items)

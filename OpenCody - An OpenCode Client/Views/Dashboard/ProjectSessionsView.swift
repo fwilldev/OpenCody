@@ -32,6 +32,11 @@ struct ProjectSessionsView: View {
     @State private var hasMore: Bool = false
     @State private var showArchived: Bool = false
 
+    /// OpenCode 2.x cannot archive sessions, so its archive controls are hidden.
+    private var supportsArchiving: Bool {
+        connectionManager.activeAPIClient?.supportsSessionArchiving ?? true
+    }
+
     /// Sessions filtered by archive status.
     private var visibleSessions: [Session] {
         if showArchived {
@@ -103,11 +108,13 @@ struct ProjectSessionsView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 HStack(spacing: Theme.Spacing.sm) {
-                    Button {
-                        showArchived.toggle()
-                    } label: {
-                        Image(systemName: showArchived ? "archivebox.fill" : "archivebox")
-                            .foregroundStyle(showArchived ? Theme.Colors.hotPink : Theme.Colors.silver)
+                    if supportsArchiving {
+                        Button {
+                            showArchived.toggle()
+                        } label: {
+                            Image(systemName: showArchived ? "archivebox.fill" : "archivebox")
+                                .foregroundStyle(showArchived ? Theme.Colors.hotPink : Theme.Colors.silver)
+                        }
                     }
 
                     Button {
@@ -279,7 +286,9 @@ struct ProjectSessionsView: View {
         }
         .buttonStyle(.plain)
         .contextMenu {
-            if session.time.archived != nil {
+            if !supportsArchiving {
+                EmptyView()
+            } else if session.time.archived != nil {
                 Button {
                     Task { await setArchived(session, archived: false) }
                 } label: {

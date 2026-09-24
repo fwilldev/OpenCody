@@ -8,7 +8,7 @@ import Foundation
 /// - `GET  /permission`                      → list pending permission requests (v1)
 /// - `POST /permission/{requestID}/reply`    → reply to a request (v1)
 /// - `GET  /api/permission/request`          → list pending requests (v2)
-/// - `POST /api/session/{sessionID}/permission/request/{requestID}/reply` → reply (v2)
+/// - `POST /api/session/{sessionID}/permission/{requestID}/reply` → reply (v2)
 /// - `GET  /api/permission/saved`            → list persisted "always" decisions
 /// - `DELETE /api/permission/saved/{id}`     → revoke a persisted decision
 ///
@@ -35,6 +35,7 @@ struct PermissionAPI: Sendable {
     /// List pending v1 permission requests.
     /// - Parameter directory: Optional project directory scope.
     func list(directory: String? = nil) async throws -> [Permission] {
+        if client.apiVersion == .v2 { return try await v2List(directory: directory) }
         let items = directory.map { [URLQueryItem(name: "directory", value: $0)] }
         let data = try await client.requestData(.get("/permission", queryItems: items))
         return try JSONDecoder().decode([Permission].self, from: data)
@@ -58,6 +59,7 @@ struct PermissionAPI: Sendable {
     /// A server may implement only one of the two surfaces, so a failure on either
     /// side is not fatal — whatever the other returns is still used.
     func listAll(directory: String? = nil) async throws -> [Permission] {
+        if client.apiVersion == .v2 { return try await v2List(directory: directory) }
         let v1 = try? await list(directory: directory)
         let v2 = try? await listV2(directory: directory)
         if v1 == nil, v2 == nil {
@@ -80,6 +82,9 @@ struct PermissionAPI: Sendable {
         decision: PermissionReplyDecision,
         message: String? = nil
     ) async throws {
+        if client.apiVersion == .v2 {
+            return try await v2Reply(to: permission, decision: decision, message: message)
+        }
         let body = ReplyBody(reply: decision.rawValue, message: message)
 
         let path: String
@@ -87,7 +92,7 @@ struct PermissionAPI: Sendable {
         case .v1:
             path = "/permission/\(permission.id)/reply"
         case .v2:
-            path = "/api/session/\(permission.sessionID)/permission/request/\(permission.id)/reply"
+            path = "/api/session/\(permission.sessionID)/permission/\(permission.id)/reply"
         }
 
         do {

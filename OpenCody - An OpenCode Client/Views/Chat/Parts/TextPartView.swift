@@ -64,11 +64,6 @@ struct TextPartView: View {
                     .foregroundStyle(Theme.Colors.cyberBlue)
                 }
             }
-                #if DEBUG
-                .onAppear {
-                    print("[TextPartView] rendering text (\(part.text.count) chars): \(part.text.prefix(200))")
-                }
-                #endif
         }
     }
 }

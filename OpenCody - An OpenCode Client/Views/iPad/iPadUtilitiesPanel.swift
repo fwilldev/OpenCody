@@ -79,7 +79,14 @@ struct iPadUtilitiesPanel: View {
     private var content: some View {
         switch selectedTab {
         case .files:
-            FileExplorerView(session: session, apiClient: apiClient, showsCloseButton: false)
+            FileExplorerView(
+                session: session,
+                apiClient: apiClient,
+                showsCloseButton: false,
+                onReference: { path in
+                    viewModel.referenceFile(path: path)
+                }
+            )
         case .todos:
             TodoListView(session: session, apiClient: apiClient, viewModel: viewModel, showsCloseButton: false)
         case .diff:

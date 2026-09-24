@@ -22,6 +22,8 @@ struct EditServerView: View {
     @State private var password: String = ""
     @State private var port: String = ""
     @State private var showDeleteConfirmation: Bool = false
+    /// API version when the sheet opened — a change means the live connection is stale.
+    @State private var originalAPIVersion: ServerAPIVersion?
 
     // MARK: - Test Connection
 
@@ -79,6 +81,7 @@ struct EditServerView: View {
             .onAppear {
                 port = server.port.map { String($0) } ?? ""
                 password = (try? KeychainService.retrieve(for: server.keychainIdentifier)) ?? ""
+                originalAPIVersion = server.apiVersion
             }
             .confirmationDialog(
                 "Delete Server",
@@ -156,6 +159,8 @@ struct EditServerView: View {
             .padding(.horizontal, Theme.Spacing.md)
             .padding(.vertical, Theme.Spacing.sm)
             .glassCard(radius: Theme.Radius.small)
+
+            ServerAPIVersionPicker(selection: $server.apiVersion)
 
             fieldGroup(label: "Username") {
                 GlassTextField(
@@ -302,7 +307,8 @@ struct EditServerView: View {
             hostname: server.hostname,
             port: portNumber,
             useHTTPS: server.useHTTPS,
-            username: server.username
+            username: server.username,
+            apiVersion: server.apiVersion
         )
 
         withAnimation { testState = .testing }
@@ -326,6 +332,13 @@ struct EditServerView: View {
 
         try? KeychainService.save(password: password, for: server.keychainIdentifier)
         serverStore.update(server)
+
+        // A live connection keeps speaking the old API; rebuild it for the new one.
+        if let originalAPIVersion, originalAPIVersion != server.apiVersion {
+            let wasActive = connectionManager.activeServerID == server.id
+            connectionManager.disconnect(serverID: server.id)
+            if wasActive { connectionManager.connectAndActivate(server: server) }
+        }
         dismiss()
     }
 

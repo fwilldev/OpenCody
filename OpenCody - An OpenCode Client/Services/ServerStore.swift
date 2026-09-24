@@ -68,6 +68,8 @@ private struct StoredServer: Codable {
     let createdAt: Date
     let lastConnectedAt: Date?
     let isDefault: Bool
+    /// Optional so configurations stored before the setting existed still decode.
+    let apiVersion: ServerAPIVersion?
 
     init(from server: ServerConnection) {
         id = server.id
@@ -80,6 +82,7 @@ private struct StoredServer: Codable {
         createdAt = server.createdAt
         lastConnectedAt = server.lastConnectedAt
         isDefault = server.isDefault
+        apiVersion = server.apiVersion
     }
 
     func toModel() -> ServerConnection {
@@ -93,7 +96,8 @@ private struct StoredServer: Codable {
             keychainIdentifier: keychainIdentifier,
             createdAt: createdAt,
             lastConnectedAt: lastConnectedAt,
-            isDefault: isDefault
+            isDefault: isDefault,
+            apiVersion: apiVersion ?? .v1
         )
     }
 }

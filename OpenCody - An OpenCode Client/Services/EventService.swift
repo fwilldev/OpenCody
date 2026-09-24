@@ -83,10 +83,14 @@ final class EventService {
         stopListening()
         connectionState = .connecting
 
+        let isV2 = apiClient.apiVersion == .v2
         let client = SSEClient(
             baseURL: apiClient.baseURL,
             authHeader: apiClient.authorizationHeader,
             directoryFilter: directoryFilter,
+            // 2.x sends a heartbeat comment every 15 s, exactly the v1 timeout.
+            heartbeatTimeout: isV2 ? 40 : 15,
+            v2Translator: isV2 ? V2EventTranslator(client: apiClient) : nil,
             onEvent: { @MainActor [weak self] event in
                 self?.onEvent?(event)
             },

@@ -10,9 +10,10 @@ import StoreKit
 
 /// Encapsulates the trigger logic for the occasional "Support the Developer" prompt.
 ///
-/// Tracks launch count, first-launch date, last-prompt date, and whether the user
-/// has ever tipped (via StoreKit transaction history). All thresholds are exposed as
-/// constants at the top for easy tuning / A-B testing.
+/// Tracks last-prompt date and whether the user has ever tipped (via StoreKit
+/// transaction history); launch counters and the quiet period shared with the rating
+/// prompt come from `PromptEngagement`. All thresholds are exposed as constants at the
+/// top for easy tuning / A-B testing.
 @Observable
 final class TipPromptService {
 
@@ -30,8 +31,6 @@ final class TipPromptService {
     // MARK: - UserDefaults Keys
 
     private enum Key {
-        static let launchCount        = "tipPrompt_launchCount"
-        static let firstLaunchDate    = "tipPrompt_firstLaunchDate"
         static let lastPromptDate     = "tipPrompt_lastPromptDate"
         static let hasTippedCached    = "tipPrompt_hasTippedCached"
     }
@@ -60,19 +59,6 @@ final class TipPromptService {
         self.hasTippedCached = defaults.bool(forKey: Key.hasTippedCached)
     }
 
-    // MARK: - Launch Tracking
-
-    /// Call once per app launch (in the root view's `.task`).
-    func recordAppLaunch() {
-        // First launch date — write once, never overwrite.
-        if defaults.object(forKey: Key.firstLaunchDate) == nil {
-            defaults.set(Date().timeIntervalSince1970, forKey: Key.firstLaunchDate)
-        }
-
-        let count = defaults.integer(forKey: Key.launchCount)
-        defaults.set(count + 1, forKey: Key.launchCount)
-    }
-
     // MARK: - Prompt Eligibility
 
     /// Whether all conditions are met to show the prompt.
@@ -82,20 +68,21 @@ final class TipPromptService {
     /// 2. At least `minimumLaunchCount` launches recorded.
     /// 3. At least `minimumDaysSinceFirstLaunch` days since first launch.
     /// 4. At least `cooldownDays` since the prompt was last shown (or never shown).
+    /// 5. No other prompt was shown inside the shared quiet period.
     var shouldShowPrompt: Bool {
         // Never prompt users who have already tipped.
         if hasTippedCached { return false }
 
         // Launch count threshold.
-        let launches = defaults.integer(forKey: Key.launchCount)
-        guard launches >= Self.minimumLaunchCount else { return false }
+        guard PromptEngagement.launchCount(defaults: defaults) >= Self.minimumLaunchCount else {
+            return false
+        }
 
         // Days-since-first-launch threshold.
-        let firstLaunchTimestamp = defaults.double(forKey: Key.firstLaunchDate)
-        guard firstLaunchTimestamp > 0 else { return false }
-        let firstLaunch = Date(timeIntervalSince1970: firstLaunchTimestamp)
-        let daysSinceFirst = Calendar.current.dateComponents([.day], from: firstLaunch, to: Date()).day ?? 0
-        guard daysSinceFirst >= Self.minimumDaysSinceFirstLaunch else { return false }
+        guard let daysSinceFirst = PromptEngagement.daysSinceFirstLaunch(defaults: defaults),
+              daysSinceFirst >= Self.minimumDaysSinceFirstLaunch else {
+            return false
+        }
 
         // Cooldown since last prompt.
         let lastPromptTimestamp = defaults.double(forKey: Key.lastPromptDate)
@@ -105,7 +92,7 @@ final class TipPromptService {
             guard daysSincePrompt >= Self.cooldownDays else { return false }
         }
 
-        return true
+        return PromptEngagement.isQuietPeriodOver(defaults: defaults)
     }
 
     // MARK: - Prompt Lifecycle
@@ -113,6 +100,7 @@ final class TipPromptService {
     /// Record that the prompt was just shown. Resets the 90-day cooldown.
     func recordPromptShown() {
         defaults.set(Date().timeIntervalSince1970, forKey: Key.lastPromptDate)
+        PromptEngagement.recordPromptShown(defaults: defaults)
     }
 
     // MARK: - StoreKit History Check

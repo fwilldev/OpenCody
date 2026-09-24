@@ -8,7 +8,7 @@ import Foundation
 /// but different key names and reply routes:
 /// - `.v1` — `permission.asked` events / `GET /permission` / `POST /permission/{id}/reply`
 /// - `.v2` — `permission.v2.asked` events / `GET /api/permission/request` /
-///           `POST /api/session/{sessionID}/permission/request/{id}/reply`
+///           `POST /api/session/{sessionID}/permission/{id}/reply`
 enum PermissionVariant: String, Codable, Sendable {
     case v1
     case v2

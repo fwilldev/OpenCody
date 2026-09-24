@@ -24,6 +24,7 @@ struct AddServerView: View {
     @State private var useHTTPS: Bool = false
     @State private var username: String = ""
     @State private var password: String = ""
+    @State private var apiVersion: ServerAPIVersion = .v1
 
     // MARK: - Test Connection
 
@@ -141,6 +142,8 @@ struct AddServerView: View {
             .padding(.horizontal, Theme.Spacing.md)
             .padding(.vertical, Theme.Spacing.sm)
             .glassCard(radius: Theme.Radius.small)
+
+            ServerAPIVersionPicker(selection: $apiVersion)
 
             fieldGroup(label: "Username") {
                 GlassTextField(
@@ -274,7 +277,8 @@ struct AddServerView: View {
             hostname: hostname,
             port: portNumber,
             useHTTPS: useHTTPS,
-            username: username
+            username: username,
+            apiVersion: apiVersion
         )
 
         withAnimation { testState = .testing }
@@ -298,7 +302,8 @@ struct AddServerView: View {
             hostname: hostname.trimmingCharacters(in: .whitespaces),
             port: portNumber,
             useHTTPS: useHTTPS,
-            username: username.trimmingCharacters(in: .whitespaces)
+            username: username.trimmingCharacters(in: .whitespaces),
+            apiVersion: apiVersion
         )
 
         try? KeychainService.save(password: password, for: connection.keychainIdentifier)

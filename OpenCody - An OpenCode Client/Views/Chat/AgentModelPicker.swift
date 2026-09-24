@@ -14,6 +14,8 @@ struct AgentModelPicker: View {
     @State private var providers: [Provider] = []
     @State private var connectedProviderIDs: [String] = []
     @State private var expandedProviderID: String? = nil
+    /// True while the agent / provider lists are being fetched.
+    @State private var isLoadingLists = true
 
     private var agentLabel: String {
         viewModel.selectedAgentID ?? "Default Agent"
@@ -35,27 +37,44 @@ struct AgentModelPicker: View {
                     .font(.caption)
                     .foregroundStyle(Theme.Colors.electricPurple)
 
-                Text(agentLabel)
-                    .font(.caption.bold())
-                    .foregroundStyle(Theme.Colors.cloud)
-                    .lineLimit(1)
+                // Until the session's selection has been resolved from history / server
+                // defaults, saying "Default Agent · Default Model" would be a guess.
+                if viewModel.isResolvingAgentModel {
+                    ProgressView()
+                        .scaleEffect(0.6)
+                        .tint(Theme.Colors.cyberBlue)
+                        .frame(width: 12, height: 12)
 
-                Text("·")
-                    .foregroundStyle(Theme.Colors.silver)
-                    .font(.caption)
+                    Text("Loading agent & model…")
+                        .font(.caption)
+                        .foregroundStyle(Theme.Colors.silver)
+                        .lineLimit(1)
 
-                Text(modelLabel)
-                    .font(.caption)
-                    .foregroundStyle(Theme.Colors.silver)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+                    Spacer()
+                } else {
+                    Text(agentLabel)
+                        .font(.caption.bold())
+                        .foregroundStyle(Theme.Colors.cloud)
+                        .lineLimit(1)
 
-                Spacer()
+                    Text("·")
+                        .foregroundStyle(Theme.Colors.silver)
+                        .font(.caption)
+
+                    Text(modelLabel)
+                        .font(.caption)
+                        .foregroundStyle(Theme.Colors.silver)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+
+                    Spacer()
+                }
 
                 Image(systemName: "chevron.down")
                     .font(.caption2)
                     .foregroundStyle(Theme.Colors.silver)
             }
+            .animation(.easeInOut(duration: 0.2), value: viewModel.isResolvingAgentModel)
             .padding(.horizontal, Theme.Spacing.md)
             .padding(.vertical, 8)
             .background(
@@ -105,6 +124,10 @@ struct AgentModelPicker: View {
                         }
                     }
                     .listRowBackground(Theme.Colors.graphite)
+
+                    if isLoadingLists && agents.isEmpty {
+                        loadingRow
+                    }
 
                     ForEach(agents.filter { !($0.hidden ?? false) }, id: \.name) { agent in
                         Button {
@@ -188,15 +211,9 @@ struct AgentModelPicker: View {
                             .listRowBackground(Theme.Colors.graphite)
                         }
                     }
-                } else if providers.isEmpty {
-                    Section {
-                        HStack {
-                            Spacer()
-                            ProgressView()
-                                .tint(Theme.Colors.cyberBlue)
-                            Spacer()
-                        }
-                        .listRowBackground(Theme.Colors.graphite)
+                } else if isLoadingLists {
+                    Section("Provider & Model") {
+                        loadingRow
                     }
                 } else {
                     Section("Provider & Model") {
@@ -221,10 +238,30 @@ struct AgentModelPicker: View {
         }
     }
 
+    /// Spinner row used while the agent / provider lists are in flight.
+    private var loadingRow: some View {
+        HStack(spacing: Theme.Spacing.sm) {
+            ProgressView()
+                .scaleEffect(0.8)
+                .tint(Theme.Colors.cyberBlue)
+            Text("Loading…")
+                .font(.subheadline)
+                .foregroundStyle(Theme.Colors.silver)
+            Spacer()
+        }
+        .listRowBackground(Theme.Colors.graphite)
+    }
+
     // MARK: - Data Loading
 
     private func loadAgentsAndProviders() async {
-        guard let client = connectionManager.activeAPIClient else { return }
+        guard let client = connectionManager.activeAPIClient else {
+            isLoadingLists = false
+            return
+        }
+
+        isLoadingLists = true
+        defer { isLoadingLists = false }
 
         async let agentFetch = AgentAPI(client: client).list()
         async let providerFetch = ProviderAPI(client: client).list()

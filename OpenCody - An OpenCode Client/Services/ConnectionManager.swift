@@ -155,7 +155,8 @@ final class ConnectionManager {
         let apiClient = APIClient(
             baseURL: server.baseURL,
             username: server.username,
-            password: password
+            password: password,
+            apiVersion: server.apiVersion
         )
 
         // 2. Health check
@@ -241,7 +242,8 @@ final class ConnectionManager {
                 let apiClient = APIClient(
                     baseURL: server.baseURL,
                     username: server.username,
-                    password: password
+                    password: password,
+                    apiVersion: server.apiVersion
                 )
                 let eventService = EventService()
                 let serverID = server.id

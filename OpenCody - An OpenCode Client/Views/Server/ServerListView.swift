@@ -28,6 +28,9 @@ struct ServerListView: View {
                 serverList
             }
         }
+        // Fill the screen: the empty state is only as wide as its text, which
+        // left the background as a strip down the middle.
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.Colors.deepBlack)
         .navigationTitle("Servers")
         .toolbar {

@@ -43,7 +43,7 @@ struct TipJarView: View {
         .task {
             await tipJarManager.start()
         }
-        .alert("Thank You! 💜", isPresented: $tipJarManager.showThankYou) {
+        .alert("Thank You!", isPresented: $tipJarManager.showThankYou) {
             Button("OK", role: .cancel) { }
         } message: {
             Text("Your support means a lot and helps keep OpenCody going. Thank you!")
@@ -106,26 +106,9 @@ struct TipJarView: View {
             Task { await tipJarManager.purchase(product) }
         } label: {
             HStack(spacing: Theme.Spacing.md) {
-                // Emoji
-                Text(TipJarManager.emoji(for: product.id))
-                    .font(.system(size: 32))
-                    .frame(width: 52, height: 52)
-                    .background(
-                        RoundedRectangle(cornerRadius: 12)
-                            .fill(accentColor(for: product.id).opacity(0.1))
-                    )
-
-                // Title + description
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(TipJarManager.tierName(for: product.id))
-                        .font(Theme.Fonts.bodyBold)
-                        .foregroundStyle(Theme.Colors.cloud)
-
-                    Text(product.description)
-                        .font(Theme.Fonts.caption)
-                        .foregroundStyle(Theme.Colors.silver)
-                        .lineLimit(2)
-                }
+                Text(TipJarManager.tierName(for: product.id))
+                    .font(Theme.Fonts.bodyBold)
+                    .foregroundStyle(Theme.Colors.cloud)
 
                 Spacer()
 
@@ -202,7 +185,7 @@ struct TipJarView: View {
                 .font(Theme.Fonts.caption)
                 .foregroundStyle(Theme.Colors.smoke)
 
-            Text("Thank you for supporting indie development! 💜")
+            Text("Thank you for supporting indie development!")
                 .font(Theme.Fonts.caption)
                 .foregroundStyle(Theme.Colors.smoke)
         }

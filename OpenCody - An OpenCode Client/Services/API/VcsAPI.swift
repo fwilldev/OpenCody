@@ -36,6 +36,7 @@ struct VcsAPI: Sendable {
 
     /// Get the current branch and the repository's default branch.
     func info(directory: String? = nil) async throws -> VcsInfo {
+        if client.apiVersion == .v2 { return try await v2Info(directory: directory) }
         let items = directory.map { [URLQueryItem(name: "directory", value: $0)] }
         let data = try await client.requestData(.get("/vcs", queryItems: items))
         return try JSONDecoder().decode(VcsInfo.self, from: data)
@@ -45,6 +46,7 @@ struct VcsAPI: Sendable {
     ///
     /// Cheaper than `diff` — use this for a change summary or badge counts.
     func status(directory: String? = nil) async throws -> [FileDiff] {
+        if client.apiVersion == .v2 { return try await v2Status(directory: directory) }
         let items = directory.map { [URLQueryItem(name: "directory", value: $0)] }
         let data = try await client.requestData(.get("/vcs/status", queryItems: items))
         return try JSONDecoder().decode([FileDiff].self, from: data)
@@ -62,6 +64,7 @@ struct VcsAPI: Sendable {
         context: Int? = nil,
         directory: String? = nil
     ) async throws -> [FileDiff] {
+        if client.apiVersion == .v2 { return try await v2Diff(mode: mode, context: context, directory: directory) }
         var items = [URLQueryItem(name: "mode", value: mode.rawValue)]
         if let context { items.append(URLQueryItem(name: "context", value: String(context))) }
         if let directory { items.append(URLQueryItem(name: "directory", value: directory)) }
@@ -73,6 +76,7 @@ struct VcsAPI: Sendable {
     ///
     /// The response is `text/x-diff`, not JSON.
     func rawDiff(directory: String? = nil) async throws -> String {
+        if client.apiVersion == .v2 { throw OpenCodeError.unsupported("Raw diffs") }
         let items = directory.map { [URLQueryItem(name: "directory", value: $0)] }
         return try await client.requestString(.get("/vcs/diff/raw", queryItems: items))
     }
@@ -83,6 +87,7 @@ struct VcsAPI: Sendable {
     /// - Throws: A validation error when the tree is not a git repo or is dirty.
     @discardableResult
     func apply(patch: String, directory: String? = nil) async throws -> Bool {
+        if client.apiVersion == .v2 { throw OpenCodeError.unsupported("Applying patches") }
         let items = directory.map { [URLQueryItem(name: "directory", value: $0)] }
         let endpoint = APIEndpoint(
             path: "/vcs/apply",

@@ -201,6 +201,17 @@ struct SettingsView: View {
 
                         SettingsDivider()
 
+                        Link(destination: AppLinks.sourceCode) {
+                            SettingsRow(
+                                icon: "chevron.left.forwardslash.chevron.right",
+                                iconColor: Theme.Colors.neonGreen,
+                                title: "OpenCody on GitHub",
+                                detail: "Source code, issues and contributions"
+                            )
+                        }
+
+                        SettingsDivider()
+
                         Link(destination: URL(string: "https://github.com/sst/opencode")!) {
                             SettingsRow(
                                 icon: "link",

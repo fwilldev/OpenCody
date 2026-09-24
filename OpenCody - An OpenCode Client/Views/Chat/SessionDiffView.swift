@@ -95,14 +95,7 @@ struct SessionDiffView: View {
             let responses = try await api.list(sessionID: session.id)
             let changeSet = SessionChangeSet(messages: responses.map { $0.toModel() })
             diffs = changeSet.files
-            #if DEBUG
-            print("[SessionDiffView] session=\(session.id) messages=\(responses.count) "
-                + "files=\(changeSet.fileCount) +\(changeSet.additions) -\(changeSet.deletions)")
-            #endif
         } catch {
-            #if DEBUG
-            print("[SessionDiffView] ERROR: \(error)")
-            #endif
             self.error = error.localizedDescription
         }
         isLoading = false

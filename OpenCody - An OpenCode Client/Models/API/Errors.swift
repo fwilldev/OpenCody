@@ -31,6 +31,9 @@ enum OpenCodeError: Error, LocalizedError, Sendable {
     /// Connection to OpenCode server failed
     case connectionFailed(String)
 
+    /// The feature has no equivalent on the server's API generation (e.g. OpenCode 2.x).
+    case unsupported(String)
+
     var errorDescription: String? {
         switch self {
         case .network(let error):
@@ -51,6 +54,8 @@ enum OpenCodeError: Error, LocalizedError, Sendable {
             return "Decoding error: \(error.localizedDescription)"
         case .connectionFailed(let message):
             return "Connection failed: \(message)"
+        case .unsupported(let feature):
+            return "\(feature) is not supported by this server version."
         }
     }
 }

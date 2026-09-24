@@ -33,6 +33,7 @@ struct CommandAPI: Sendable {
 
     /// List all available slash commands.
     func list(directory: String? = nil) async throws -> [SlashCommand] {
+        if client.apiVersion == .v2 { return try await v2List(directory: directory) }
         let items = directory.map { [URLQueryItem(name: "directory", value: $0)] }
         let data = try await client.requestData(.get("/command", queryItems: items))
         return try JSONDecoder().decode([SlashCommand].self, from: data)
@@ -57,6 +58,7 @@ struct CommandAPI: Sendable {
         model: String? = nil,
         variant: String? = nil
     ) async throws {
+        if client.apiVersion == .v2 { return try await v2Execute(sessionID: sessionID, command: command, arguments: arguments) }
         let body = ExecuteBody(
             command: command,
             arguments: arguments,
@@ -81,6 +83,7 @@ struct CommandAPI: Sendable {
 
     /// List all agent skills registered on the server.
     func listSkills(directory: String? = nil) async throws -> [Skill] {
+        if client.apiVersion == .v2 { return try await v2ListSkills(directory: directory) }
         let items = directory.map { [URLQueryItem(name: "directory", value: $0)] }
         let data = try await client.requestData(.get("/skill", queryItems: items))
         return try JSONDecoder().decode([Skill].self, from: data)
@@ -96,6 +99,7 @@ struct CommandAPI: Sendable {
         modelID: String,
         directory: String? = nil
     ) async throws -> [ToolListItem] {
+        if client.apiVersion == .v2 { throw OpenCodeError.unsupported("Tool listing") }
         var items = [
             URLQueryItem(name: "provider", value: providerID),
             URLQueryItem(name: "model", value: modelID),
@@ -110,6 +114,7 @@ struct CommandAPI: Sendable {
     /// Unlike `listTools`, this needs no provider/model and is the cheap way to
     /// discover which tools exist.
     func listToolIDs(directory: String? = nil) async throws -> [String] {
+        if client.apiVersion == .v2 { throw OpenCodeError.unsupported("Tool listing") }
         let items = directory.map { [URLQueryItem(name: "directory", value: $0)] }
         let data = try await client.requestData(.get("/experimental/tool/ids", queryItems: items))
         return try JSONDecoder().decode([String].self, from: data)

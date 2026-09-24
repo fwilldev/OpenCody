@@ -14,6 +14,7 @@ struct ConfigAPI: Sendable {
 
     /// Get the current server configuration.
     func get() async throws -> ServerConfig {
+        if client.apiVersion == .v2 { return try await v2Get() }
         let data = try await client.requestData(.get("/config"))
         return try JSONDecoder().decode(ServerConfig.self, from: data)
     }
@@ -21,6 +22,7 @@ struct ConfigAPI: Sendable {
     /// Partially update the server configuration.
     /// Only the fields set on `config` are sent; all fields are optional.
     func update(_ config: ServerConfig) async throws -> ServerConfig {
+        if client.apiVersion == .v2 { throw OpenCodeError.unsupported("Editing the configuration") }
         let data = try await client.requestData(.patch("/config", body: config))
         return try JSONDecoder().decode(ServerConfig.self, from: data)
     }

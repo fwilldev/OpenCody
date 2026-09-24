@@ -10,12 +10,16 @@ import Foundation
 /// All stored properties are immutable (`let`) to satisfy `Sendable`.
 nonisolated final class APIClient: Sendable {
     let baseURL: String
+    /// API generation the server speaks. The typed API wrappers branch on this to
+    /// reach the matching routes; see `ServerAPIVersion`.
+    let apiVersion: ServerAPIVersion
     private let authHeader: String?
     var authorizationHeader: String? { authHeader }
     private let session: URLSession
 
-    init(baseURL: String, username: String, password: String) {
+    init(baseURL: String, username: String, password: String, apiVersion: ServerAPIVersion = .v1) {
         self.baseURL = baseURL
+        self.apiVersion = apiVersion
 
         // Basic Auth header
         if !username.isEmpty || !password.isEmpty {
@@ -33,6 +37,17 @@ nonisolated final class APIClient: Sendable {
         config.httpAdditionalHeaders = [
             "Accept": "application/json",
         ]
+
+        // Responses from this API carry credentials: `GET /provider` includes the
+        // resolved API key for env- and config-sourced providers, because the server's
+        // `toPublicInfo` strips only functions and undefined values, not `key`. The
+        // default configuration comes with a `URLCache`, which would write those bodies
+        // to an unencrypted on-disk cache inside the app container — so opt out of
+        // caching entirely. It also removes a whole class of stale-read bugs, which is
+        // what you want from a live API anyway.
+        config.urlCache = nil
+        config.requestCachePolicy = .reloadIgnoringLocalCacheData
+
         self.session = URLSession(configuration: config)
     }
 
@@ -56,12 +71,6 @@ nonisolated final class APIClient: Sendable {
     func requestVoid(_ endpoint: APIEndpoint) async throws {
         let urlRequest = try buildRequest(endpoint)
         let (data, response) = try await session.data(for: urlRequest)
-        #if DEBUG
-        if let httpResp = response as? HTTPURLResponse {
-            let bodyPreview = String(data: data, encoding: .utf8)?.prefix(500) ?? "<nil>"
-            print("[APIClient] requestVoid \(endpoint.method.rawValue) \(endpoint.path) -> \(httpResp.statusCode) body=\(bodyPreview)")
-        }
-        #endif
         try validateResponse(response, data: data)
     }
 
@@ -97,7 +106,8 @@ nonisolated final class APIClient: Sendable {
 
     /// Quick health check — returns `true` if server responds 200.
     func healthCheck() async throws -> Bool {
-        let endpoint = APIEndpoint.get("/global/health")
+        // 2.x has no `/global/health`; `/api/info` is its cheapest authenticated route.
+        let endpoint = APIEndpoint.get(apiVersion == .v2 ? "/api/info" : "/global/health")
         let urlRequest = try buildRequest(endpoint)
         let (_, response) = try await session.data(for: urlRequest)
         guard let httpResponse = response as? HTTPURLResponse else { return false }

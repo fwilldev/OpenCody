@@ -310,23 +310,54 @@ struct ProviderOptions: Codable, Sendable {
     var baseURL: String?
     var enterpriseUrl: String?
     var setCacheKey: Bool?
+    /// Request timeout in ms. The server also accepts `false` (no timeout), which
+    /// decodes as `nil` rather than failing the whole config.
     var timeout: Int?
+
+    private enum CodingKeys: String, CodingKey {
+        case apiKey, baseURL, enterpriseUrl, setCacheKey, timeout
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        apiKey = try? c.decodeIfPresent(String.self, forKey: .apiKey)
+        baseURL = try? c.decodeIfPresent(String.self, forKey: .baseURL)
+        enterpriseUrl = try? c.decodeIfPresent(String.self, forKey: .enterpriseUrl)
+        setCacheKey = try? c.decodeIfPresent(Bool.self, forKey: .setCacheKey)
+        timeout = try? c.decodeIfPresent(Int.self, forKey: .timeout)
+    }
 }
 
 // MARK: - McpConfig
 
-/// Local or Remote MCP server config, discriminated on `type`
+/// One entry of the config's `mcp` map.
+///
+/// The server models this as `McpLocalConfig | McpRemoteConfig | { enabled: Bool }`.
+/// That third variant is easy to miss and matters a lot: it is how a config file
+/// enables or disables a server that is *defined somewhere else* in the config
+/// chain, and it carries no `type`. Treating it as a decode failure takes the whole
+/// `GET /config` response down with it, not just the one entry.
 enum McpConfig: Codable, Sendable {
     case local(McpLocalConfig)
     case remote(McpRemoteConfig)
+    /// `{ "enabled": Bool }` — an enable/disable override for a server declared elsewhere.
+    case enabledOverride(Bool)
 
     private enum CodingKeys: String, CodingKey {
         case type
+        case enabled
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        let type = try container.decode(String.self, forKey: .type)
+
+        // The override variant has no `type`, so probe for it first.
+        guard let type = try container.decodeIfPresent(String.self, forKey: .type) else {
+            let enabled = try container.decode(Bool.self, forKey: .enabled)
+            self = .enabledOverride(enabled)
+            return
+        }
+
         switch type {
         case "local":
             self = .local(try McpLocalConfig(from: decoder))
@@ -345,22 +376,157 @@ enum McpConfig: Codable, Sendable {
         switch self {
         case .local(let c): try c.encode(to: encoder)
         case .remote(let c): try c.encode(to: encoder)
+        case .enabledOverride(let enabled):
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(enabled, forKey: .enabled)
+        }
+    }
+
+    // MARK: - Accessors
+
+    /// Whether the server is enabled. An entry with no explicit flag counts as enabled.
+    var isEnabled: Bool {
+        switch self {
+        case .local(let c): return c.enabled ?? true
+        case .remote(let c): return c.enabled ?? true
+        case .enabledOverride(let enabled): return enabled
+        }
+    }
+
+    /// A one-line summary of what this server connects to, for list rows.
+    ///
+    /// `nil` for an override entry: it carries no connection details, and repeating
+    /// its enabled flag would just duplicate the status line next to it.
+    var summary: String? {
+        switch self {
+        case .local(let c): return c.command.joined(separator: " ")
+        case .remote(let c): return c.url
+        case .enabledOverride: return nil
+        }
+    }
+
+    /// The same entry with `enabled` set — used to toggle a server persistently.
+    func settingEnabled(_ enabled: Bool) -> McpConfig {
+        switch self {
+        case .local(var c):
+            c.enabled = enabled
+            return .local(c)
+        case .remote(var c):
+            c.enabled = enabled
+            return .remote(c)
+        case .enabledOverride:
+            return .enabledOverride(enabled)
         }
     }
 }
 
+// MARK: - McpLocalConfig
+
+/// A stdio MCP server: a process the opencode server spawns and talks to over stdin/stdout.
 struct McpLocalConfig: Codable, Sendable {
     let type: String
-    let command: [String]
+    /// Command and arguments, already split into argv form.
+    var command: [String]
+    /// Working directory for the process. Relative paths resolve from the workspace.
+    var cwd: String?
     var environment: [String: String]?
     var enabled: Bool?
+    /// Request timeout in ms. The server defaults to 5000 when absent.
     var timeout: Int?
+
+    init(
+        command: [String],
+        cwd: String? = nil,
+        environment: [String: String]? = nil,
+        enabled: Bool? = nil,
+        timeout: Int? = nil
+    ) {
+        self.type = "local"
+        self.command = command
+        self.cwd = cwd
+        self.environment = environment
+        self.enabled = enabled
+        self.timeout = timeout
+    }
 }
 
+// MARK: - McpRemoteConfig
+
+/// A remote MCP server reached over HTTP (streamable HTTP or SSE).
 struct McpRemoteConfig: Codable, Sendable {
     let type: String
-    let url: String
+    var url: String
     var enabled: Bool?
+    /// Static headers sent with every request — the usual home for a bearer token.
     var headers: [String: String]?
+    /// OAuth settings, or `.disabled` to switch off the server's OAuth auto-detection.
+    var oauth: McpOAuthSetting?
     var timeout: Int?
+
+    init(
+        url: String,
+        enabled: Bool? = nil,
+        headers: [String: String]? = nil,
+        oauth: McpOAuthSetting? = nil,
+        timeout: Int? = nil
+    ) {
+        self.type = "remote"
+        self.url = url
+        self.enabled = enabled
+        self.headers = headers
+        self.oauth = oauth
+        self.timeout = timeout
+    }
+}
+
+// MARK: - McpOAuthSetting
+
+/// `oauth` on a remote MCP server: either a config object, or literal `false` to
+/// suppress the server's OAuth auto-discovery entirely.
+enum McpOAuthSetting: Codable, Sendable {
+    case disabled
+    case settings(McpOAuthConfig)
+
+    init(from decoder: Decoder) throws {
+        let single = try decoder.singleValueContainer()
+        if let flag = try? single.decode(Bool.self) {
+            // Only `false` is meaningful here; `true` is not part of the server's union.
+            self = flag ? .settings(McpOAuthConfig()) : .disabled
+            return
+        }
+        self = .settings(try McpOAuthConfig(from: decoder))
+    }
+
+    func encode(to encoder: Encoder) throws {
+        switch self {
+        case .disabled:
+            var single = encoder.singleValueContainer()
+            try single.encode(false)
+        case .settings(let config):
+            try config.encode(to: encoder)
+        }
+    }
+}
+
+struct McpOAuthConfig: Codable, Sendable {
+    /// Omit to let the server attempt dynamic client registration (RFC 7591).
+    var clientId: String?
+    var clientSecret: String?
+    var scope: String?
+    var callbackPort: Int?
+    var redirectUri: String?
+
+    init(
+        clientId: String? = nil,
+        clientSecret: String? = nil,
+        scope: String? = nil,
+        callbackPort: Int? = nil,
+        redirectUri: String? = nil
+    ) {
+        self.clientId = clientId
+        self.clientSecret = clientSecret
+        self.scope = scope
+        self.callbackPort = callbackPort
+        self.redirectUri = redirectUri
+    }
 }

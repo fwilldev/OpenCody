@@ -157,16 +157,6 @@ final class TipJarManager {
 
 extension TipJarManager {
 
-    /// Human-readable emoji for each tip tier.
-    static func emoji(for productID: String) -> String {
-        switch productID {
-        case "tip_jar":     return "☕"
-        case "mid_tip_jar": return "🧁"
-        case "big_tip_jar": return "🎉"
-        default:            return "💜"
-        }
-    }
-
     /// Human-readable tier name.
     static func tierName(for productID: String) -> String {
         switch productID {

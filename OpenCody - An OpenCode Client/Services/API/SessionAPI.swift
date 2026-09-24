@@ -185,6 +185,7 @@ struct SessionAPI: Sendable {
         start: Int? = nil,
         search: String? = nil
     ) async throws -> [Session] {
+        if client.apiVersion == .v2 { return try await v2List(roots: roots, limit: limit, start: start, search: search) }
         var extra: [URLQueryItem] = []
         if roots { extra.append(URLQueryItem(name: "roots", value: "true")) }
         extra.append(URLQueryItem(name: "limit", value: String(limit)))
@@ -205,6 +206,7 @@ struct SessionAPI: Sendable {
         search: String? = nil,
         archived: Bool = false
     ) async throws -> [GlobalSession] {
+        if client.apiVersion == .v2 { return try await v2ListGlobal(roots: roots, limit: limit, search: search, archived: archived) }
         var items: [URLQueryItem] = [
             URLQueryItem(name: "roots", value: roots ? "true" : "false"),
             URLQueryItem(name: "limit", value: String(limit)),
@@ -218,6 +220,7 @@ struct SessionAPI: Sendable {
 
     /// Get the status of all sessions (keyed by session ID).
     func status() async throws -> [String: SessionStatus] {
+        if client.apiVersion == .v2 { return try await v2Status() }
         let data = try await client.requestData(.get("/session/status", queryItems: query()))
         return try JSONDecoder().decode([String: SessionStatus].self, from: data)
     }
@@ -238,6 +241,7 @@ struct SessionAPI: Sendable {
         model: ModelRef? = nil,
         workspaceID: String? = nil
     ) async throws -> Session {
+        if client.apiVersion == .v2 { return try await v2Create(title: title, agent: agent, model: model) }
         let body = CreateBody(
             parentID: parentID,
             title: title,
@@ -257,12 +261,14 @@ struct SessionAPI: Sendable {
 
     /// Get a single session by ID.
     func get(id: String) async throws -> Session {
+        if client.apiVersion == .v2 { return try await v2Get(id: id) }
         let data = try await client.requestData(.get("/session/\(id)", queryItems: query()))
         return try JSONDecoder().decode(Session.self, from: data)
     }
 
     /// Delete a session and all of its data.
     func delete(id: String) async throws {
+        if client.apiVersion == .v2 { return try await v2Delete(id: id) }
         try await client.requestVoid(APIEndpoint(path: "/session/\(id)", method: .DELETE, queryItems: query(), contentType: .none))
     }
 
@@ -273,6 +279,7 @@ struct SessionAPI: Sendable {
     ///   - setArchived: `true` to archive (sets timestamp), `false` to unarchive (sends JSON null).
     ///                  Pass `nil` to leave the archived status unchanged.
     func update(id: String, title: String? = nil, setArchived: Bool? = nil) async throws -> Session {
+        if client.apiVersion == .v2 { return try await v2Update(id: id, title: title, setArchived: setArchived) }
         let timeBody: UpdateBody.UpdateTimeBody? = setArchived.map { archive in
             UpdateBody.UpdateTimeBody(
                 archived: archive ? .value(Date().timeIntervalSince1970) : .null
@@ -285,6 +292,7 @@ struct SessionAPI: Sendable {
 
     /// Get the child sessions forked from (or spawned as subagents of) a session.
     func children(id: String) async throws -> [Session] {
+        if client.apiVersion == .v2 { return try await v2Children(id: id) }
         let data = try await client.requestData(.get("/session/\(id)/children", queryItems: query()))
         return try JSONDecoder().decode([Session].self, from: data)
     }
@@ -293,12 +301,14 @@ struct SessionAPI: Sendable {
 
     /// Abort a running session.
     func abort(id: String) async throws {
+        if client.apiVersion == .v2 { return try await v2Abort(id: id) }
         try await client.requestVoid(APIEndpoint(path: "/session/\(id)/abort", method: .POST, queryItems: query()))
     }
 
     /// Detach any synchronous subagents currently blocking the session so they
     /// continue in the background.
     func backgroundSubagents(id: String) async throws {
+        if client.apiVersion == .v2 { return try await v2BackgroundSubagents(id: id) }
         try await client.requestVoid(
             APIEndpoint(path: "/experimental/session/\(id)/background", method: .POST, queryItems: query())
         )
@@ -307,6 +317,7 @@ struct SessionAPI: Sendable {
     /// Compact the session's context via AI summarization.
     /// - Returns: `true` when the server accepted the request.
     func summarize(id: String, providerID: String, modelID: String, auto: Bool? = nil) async throws -> Bool {
+        if client.apiVersion == .v2 { return try await v2Summarize(id: id) }
         let data = try await client.requestData(
             try scoped(
                 "/session/\(id)/summarize",
@@ -329,6 +340,11 @@ struct SessionAPI: Sendable {
         modelID: String,
         messageID: String? = nil
     ) async throws -> Bool {
+        if client.apiVersion == .v2 {
+            // 2.x ships AGENTS.md generation as the built-in `init` command.
+            try await CommandAPI(client: client).v2Execute(sessionID: id, command: "init", arguments: "")
+            return true
+        }
         let body = InitBody(
             modelID: modelID,
             providerID: providerID,
@@ -342,12 +358,14 @@ struct SessionAPI: Sendable {
 
     /// Share a session (creates a public share link).
     func share(id: String) async throws -> Session {
+        if client.apiVersion == .v2 { throw OpenCodeError.unsupported("Session sharing") }
         let data = try await client.requestData(APIEndpoint(path: "/session/\(id)/share", method: .POST, queryItems: query()))
         return try JSONDecoder().decode(Session.self, from: data)
     }
 
     /// Unshare a session (removes the share link).
     func unshare(id: String) async throws {
+        if client.apiVersion == .v2 { throw OpenCodeError.unsupported("Session sharing") }
         try await client.requestVoid(APIEndpoint(path: "/session/\(id)/share", method: .DELETE, queryItems: query(), contentType: .none))
     }
 
@@ -355,12 +373,14 @@ struct SessionAPI: Sendable {
 
     /// Fork a session, optionally at a specific message.
     func fork(id: String, messageID: String? = nil) async throws -> Session {
+        if client.apiVersion == .v2 { return try await v2Fork(id: id, messageID: messageID) }
         let data = try await client.requestData(try scoped("/session/\(id)/fork", method: .POST, body: ForkBody(messageID: messageID)))
         return try JSONDecoder().decode(Session.self, from: data)
     }
 
     /// Revert the session to the state before a specific message (or part).
     func revert(id: String, messageID: String, partID: String? = nil) async throws -> Session {
+        if client.apiVersion == .v2 { return try await v2Revert(id: id, messageID: messageID) }
         let data = try await client.requestData(
             try scoped("/session/\(id)/revert", method: .POST, body: RevertBody(messageID: messageID, partID: partID))
         )
@@ -369,6 +389,7 @@ struct SessionAPI: Sendable {
 
     /// Restore all previously reverted messages.
     func unrevert(id: String) async throws -> Session {
+        if client.apiVersion == .v2 { return try await v2Unrevert(id: id) }
         let data = try await client.requestData(APIEndpoint(path: "/session/\(id)/unrevert", method: .POST, queryItems: query()))
         return try JSONDecoder().decode(Session.self, from: data)
     }
@@ -388,6 +409,7 @@ struct SessionAPI: Sendable {
     ///   - messageID: The **user** message whose changes to return. Passing an
     ///     assistant message ID also yields an empty array.
     func diff(id: String, messageID: String) async throws -> [FileDiff] {
+        if client.apiVersion == .v2 { return try await v2Diff(id: id, messageID: messageID) }
         let data = try await client.requestData(
             .get(
                 "/session/\(id)/diff",
@@ -399,6 +421,8 @@ struct SessionAPI: Sendable {
 
     /// Get todos for a session.
     func todos(id: String) async throws -> [TodoItem] {
+        // 2.x has no todo list.
+        if client.apiVersion == .v2 { return [] }
         let data = try await client.requestData(.get("/session/\(id)/todo", queryItems: query()))
         return try JSONDecoder().decode([TodoItem].self, from: data)
     }
@@ -413,6 +437,7 @@ struct SessionAPI: Sendable {
         providerID: String? = nil,
         modelID: String? = nil
     ) async throws {
+        if client.apiVersion == .v2 { return try await v2Shell(id: id, command: command) }
         var model: ShellBody.ShellModelSelection? = nil
         if let providerID, let modelID {
             model = ShellBody.ShellModelSelection(providerID: providerID, modelID: modelID)

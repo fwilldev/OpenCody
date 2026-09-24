@@ -36,6 +36,7 @@
 		B01761B12F5981A600911C23 /* Launch Screen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = "Launch Screen.storyboard"; sourceTree = "<group>"; };
 		B01761B32F59839100911C23 /* opencody.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = opencody.png; sourceTree = "<group>"; };
 		B05C62052F56F8580058D14E /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = AppIcon.icon; sourceTree = "<group>"; };
+		B0AA11012F5981A600911C99 /* OpenCodyInfo.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = OpenCodyInfo.plist; sourceTree = "<group>"; };
 		B0CD5F092F4DFB2700E79BBB /* OpenCody - An OpenCode Client.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "OpenCody - An OpenCode Client.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		B0CD5F182F4DFB2900E79BBB /* OpenCody - An OpenCode ClientTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "OpenCody - An OpenCode ClientTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		B0CD5F222F4DFB2900E79BBB /* OpenCody - An OpenCode ClientUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "OpenCody - An OpenCode ClientUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -92,6 +93,7 @@
 			children = (
 				B01761B12F5981A600911C23 /* Launch Screen.storyboard */,
 				B01761B32F59839100911C23 /* opencody.png */,
+				B0AA11012F5981A600911C99 /* OpenCodyInfo.plist */,
 				B05C62052F56F8580058D14E /* AppIcon.icon */,
 				B0CD5F0B2F4DFB2700E79BBB /* OpenCody - An OpenCode Client */,
 				B0CD5F1B2F4DFB2900E79BBB /* OpenCody - An OpenCode ClientTests */,
@@ -426,15 +428,15 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 4;
+				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = Q738AAV584;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = OpenCodyInfo.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "OpenCody - An OpenCode Client";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UIStatusBarStyle = UIStatusBarStyleDarkContent;
+				INFOPLIST_KEY_UIStatusBarStyle = "";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				IPHONEOS_DEPLOYMENT_TARGET = 26;
@@ -442,7 +444,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.5;
+				MARKETING_VERSION = 1.7;
 				PRODUCT_BUNDLE_IDENTIFIER = wss.OpenCody;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -462,15 +464,15 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 4;
+				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = Q738AAV584;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = OpenCodyInfo.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "OpenCody - An OpenCode Client";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UIStatusBarStyle = UIStatusBarStyleDarkContent;
+				INFOPLIST_KEY_UIStatusBarStyle = "";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				IPHONEOS_DEPLOYMENT_TARGET = 26;
@@ -478,7 +480,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.5;
+				MARKETING_VERSION = 1.7;
 				PRODUCT_BUNDLE_IDENTIFIER = wss.OpenCody;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;

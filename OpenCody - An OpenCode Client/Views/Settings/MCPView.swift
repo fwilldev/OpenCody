@@ -5,69 +5,99 @@
 
 import SwiftUI
 
-/// Lists all MCP (Model Context Protocol) servers with their status.
-/// Supports connect/disconnect, add new, and swipe to remove.
+/// Lists the MCP (Model Context Protocol) servers configured on the opencode server,
+/// and lets the ones declared in the global config be created, edited and toggled.
+///
+/// Two kinds of row appear here and they behave differently on purpose:
+///
+/// - Servers from the **global** config can be edited and persistently enabled or
+///   disabled, because the app can write that file.
+/// - Servers from a **project** config (or added at runtime) are read-only. The app
+///   has no write path to those sources, so offering an edit button would be a lie;
+///   the row says where the definition lives instead.
 struct MCPView: View {
     let apiClient: APIClient
+    /// The workspace whose MCP config should be inspected. MCP routes are
+    /// instance-scoped, so without this the screen shows the server's own cwd instance.
+    var directory: String? = nil
 
-    @State private var statusMap: MCPAPI.McpStatusMap = [:]
-    @State private var isLoading = true
-    @State private var error: String? = nil
-    @State private var showAddSheet = false
-    @State private var pendingAction: String? = nil // name of server being acted upon
+    @State private var model: MCPViewModel
+    @State private var editing: MCPServerEditView.Mode? = nil
 
-    private var mcpAPI: MCPAPI { MCPAPI(client: apiClient) }
-    private var sortedServers: [(name: String, status: McpStatus)] {
-        statusMap.map { (name: $0.key, status: $0.value) }.sorted { $0.name < $1.name }
+    init(apiClient: APIClient, directory: String? = nil) {
+        self.apiClient = apiClient
+        self.directory = directory
+        _model = State(initialValue: MCPViewModel(apiClient: apiClient, directory: directory))
     }
 
     var body: some View {
         ZStack {
             Theme.Colors.deepBlack.ignoresSafeArea()
 
-            if isLoading && statusMap.isEmpty {
-                ProgressView("Loading MCP servers…")
-                    .tint(Theme.Colors.cyberBlue)
-                    .foregroundStyle(Theme.Colors.silver)
-            } else if let err = error {
+            if model.isLoading && model.entries.isEmpty {
+                loadingSkeleton
+            } else if let err = model.loadError, model.entries.isEmpty {
                 EmptyStateView(
                     systemImage: "exclamationmark.triangle",
-                    title: "Error",
+                    title: "Could Not Load",
                     message: err,
-                    action: { Task { await loadServers() } },
+                    action: { Task { await model.load() } },
                     actionLabel: "Retry"
                 )
-            } else if sortedServers.isEmpty {
+            } else if model.entries.isEmpty {
                 EmptyStateView(
                     systemImage: "puzzlepiece.extension",
                     title: "No MCP Servers",
-                    message: "Add a Model Context Protocol server to extend AI capabilities.",
-                    action: { showAddSheet = true },
+                    message: "Add a Model Context Protocol server to give the agent more tools.",
+                    action: { editing = .create },
                     actionLabel: "Add Server"
                 )
             } else {
                 serverList
             }
         }
+        .overlay(alignment: .top) { bannerOverlay }
         .navigationTitle("MCP Servers")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button {
-                    showAddSheet = true
+                    editing = .create
                 } label: {
                     Image(systemName: "plus")
                         .foregroundStyle(Theme.Colors.cyberBlue)
                 }
             }
         }
-        .sheet(isPresented: $showAddSheet) {
-            MCPAddView(apiClient: apiClient) {
-                Task { await loadServers() }
-            }
+        .sheet(item: $editing) { mode in
+            MCPServerEditView(
+                mode: mode,
+                existingNames: Set(model.entries.map(\.name)),
+                onSave: { name, config, previous in
+                    try await model.save(name: name, config: config, previous: previous)
+                }
+            )
         }
-        .task { await loadServers() }
-        .refreshable { await loadServers() }
+        .task { await model.load() }
+        .refreshable { await model.load() }
+    }
+
+    // MARK: - Banner
+
+    @ViewBuilder
+    private var bannerOverlay: some View {
+        if let banner = model.banner {
+            ErrorBanner(
+                error: .validation(0, banner.text),
+                onDismiss: { model.banner = nil }
+            )
+            // Keyed on the message: `ErrorBanner` animates itself in from `onAppear`,
+            // so without a fresh identity a replacement message would swap in silently.
+            .id(banner.id)
+            .padding(.horizontal, Theme.Spacing.md)
+            .padding(.top, Theme.Spacing.sm)
+            .transition(.move(edge: .top).combined(with: .opacity))
+        }
     }
 
     // MARK: - Server List
@@ -75,7 +105,7 @@ struct MCPView: View {
     private var serverList: some View {
         ScrollView {
             VStack(spacing: 0) {
-                ForEach(Array(sortedServers.enumerated()), id: \.element.name) { index, entry in
+                ForEach(Array(model.entries.enumerated()), id: \.element.id) { index, entry in
                     if index > 0 {
                         Rectangle()
                             .fill(Theme.Colors.graphite)
@@ -84,376 +114,265 @@ struct MCPView: View {
                             .padding(.vertical, 2)
                     }
                     MCPServerRow(
-                        name: entry.name,
-                        status: entry.status,
-                        isPending: pendingAction == entry.name,
-                        onConnect: { Task { await connect(name: entry.name) } },
-                        onDisconnect: { Task { await disconnect(name: entry.name) } }
+                        entry: entry,
+                        isPending: model.pending.contains(entry.name),
+                        onConnect: { Task { await model.connect(name: entry.name) } },
+                        onDisconnect: { Task { await model.disconnect(name: entry.name) } },
+                        onEdit: {
+                            if let config = entry.globalConfig {
+                                editing = .edit(name: entry.name, config: config)
+                            }
+                        },
+                        onSetEnabled: { enabled in
+                            Task { await model.setEnabled(name: entry.name, enabled: enabled) }
+                        },
+                        onSignOut: { Task { await model.signOut(name: entry.name) } }
                     )
-                    .contextMenu {
-                        // MCP servers come from server-side configuration and cannot
-                        // be deleted over the API — offer the actions that exist:
-                        // disconnect, and clearing stored OAuth credentials.
-                        Button {
-                            Task { await disconnect(name: entry.name) }
-                        } label: {
-                            Label("Disconnect", systemImage: "bolt.slash")
-                        }
-
-                        Button(role: .destructive) {
-                            Task { await signOut(name: entry.name) }
-                        } label: {
-                            Label("Remove Saved Login", systemImage: "person.badge.minus")
-                        }
-                    }
                 }
             }
             .padding(Theme.Spacing.md)
-            .background(
-                RoundedRectangle(cornerRadius: 14)
-                    .fill(Theme.Colors.carbon)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 14)
-                    .stroke(Theme.Colors.graphite, lineWidth: 1)
-            )
+            .background(RoundedRectangle(cornerRadius: 14).fill(Theme.Colors.carbon))
+            .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.Colors.graphite, lineWidth: 1))
             .padding(.horizontal, Theme.Spacing.md)
             .padding(.top, Theme.Spacing.sm)
+
+            footerNote
         }
     }
 
-    // MARK: - Actions
-
-    private func loadServers() async {
-        isLoading = true
-        error = nil
-        do {
-            statusMap = try await mcpAPI.list()
-        } catch {
-            self.error = error.localizedDescription
+    private var footerNote: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+            Text("Servers are stored in the opencode config on your server. Removing one entirely is not possible over the API — disable it here, or delete its entry from the config file.")
+                .font(Theme.Fonts.caption)
+                .foregroundStyle(Theme.Colors.silver)
         }
-        isLoading = false
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, Theme.Spacing.md + Theme.Spacing.xs)
+        .padding(.top, Theme.Spacing.md)
+        .padding(.bottom, Theme.Spacing.xl)
     }
 
-    private func connect(name: String) async {
-        pendingAction = name
-        do {
-            try await mcpAPI.connect(name: name)
-            await loadServers()
-        } catch {
-            // Silently refresh to show current state
-            await loadServers()
-        }
-        pendingAction = nil
-    }
+    // MARK: - Loading
 
-    private func disconnect(name: String) async {
-        pendingAction = name
-        do {
-            try await mcpAPI.disconnect(name: name)
-            await loadServers()
-        } catch {
-            await loadServers()
+    private var loadingSkeleton: some View {
+        VStack(spacing: 0) {
+            ForEach(0..<4, id: \.self) { index in
+                if index > 0 {
+                    Rectangle().fill(Theme.Colors.graphite).frame(height: 1).padding(.leading, 20)
+                }
+                HStack(spacing: Theme.Spacing.md) {
+                    Circle().fill(Theme.Colors.fillMuted).frame(width: 8, height: 8)
+                    VStack(alignment: .leading, spacing: 6) {
+                        SkeletonBlock(width: 120, height: 13)
+                        SkeletonBlock(width: 190, height: 10)
+                    }
+                    Spacer()
+                    SkeletonBlock(width: 74, height: 24, cornerRadius: 12)
+                }
+                .padding(.vertical, 10)
+            }
         }
-        pendingAction = nil
+        .padding(Theme.Spacing.md)
+        .background(RoundedRectangle(cornerRadius: 14).fill(Theme.Colors.carbon))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.Colors.graphite, lineWidth: 1))
+        .padding(.horizontal, Theme.Spacing.md)
+        .frame(maxHeight: .infinity, alignment: .top)
+        .padding(.top, Theme.Spacing.sm)
     }
+}
 
-    /// Clear the server's stored OAuth credentials so it re-authenticates next connect.
-    private func signOut(name: String) async {
-        pendingAction = name
-        do {
-            try await mcpAPI.removeOAuth(name: name)
-        } catch {
-            // Server may have no stored credentials — either way, refresh the state.
+// MARK: - Sheet Item Helper
+
+extension MCPServerEditView.Mode: Identifiable {
+    var id: String {
+        switch self {
+        case .create: return "__create__"
+        case .edit(let name, _): return "edit:\(name)"
         }
-        await loadServers()
-        pendingAction = nil
     }
 }
 
 // MARK: - MCPServerRow
 
 private struct MCPServerRow: View {
-    let name: String
-    let status: McpStatus
+    let entry: MCPServerEntry
     let isPending: Bool
     let onConnect: () -> Void
     let onDisconnect: () -> Void
+    let onEdit: () -> Void
+    let onSetEnabled: (Bool) -> Void
+    let onSignOut: () -> Void
+
+    @State private var showsDetail = false
+
+    private var status: McpStatus { entry.displayStatus }
 
     var body: some View {
-        HStack(spacing: Theme.Spacing.md) {
-            // Status dot
-            Circle()
-                .fill(dotColor)
-                .frame(width: 8, height: 8)
+        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+            HStack(spacing: Theme.Spacing.md) {
+                Circle()
+                    .fill(dotColor)
+                    .frame(width: 8, height: 8)
 
-            VStack(alignment: .leading, spacing: 3) {
-                Text(name)
-                    .font(Theme.Fonts.bodyBold)
-                    .foregroundStyle(Theme.Colors.cloud)
-                Text(statusLabel)
-                    .font(Theme.Fonts.caption)
-                    .foregroundStyle(statusLabelColor)
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 6) {
+                        Text(entry.name)
+                            .font(Theme.Fonts.bodyBold)
+                            .foregroundStyle(Theme.Colors.cloud)
+                        if entry.origin == .external {
+                            Text("read-only")
+                                .font(.system(size: 9, weight: .semibold))
+                                .foregroundStyle(Theme.Colors.silver)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 2)
+                                .background(Capsule().fill(Theme.Colors.fillStrong))
+                        }
+                    }
+                    Text(statusLabel)
+                        .font(Theme.Fonts.caption)
+                        .foregroundStyle(statusColor)
+                    if let summary = entry.summary, !summary.isEmpty {
+                        Text(summary)
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundStyle(Theme.Colors.silver)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                }
+
+                Spacer()
+
+                if isPending {
+                    ProgressView()
+                        .scaleEffect(0.7)
+                        .tint(Theme.Colors.cyberBlue)
+                } else {
+                    actionButton
+                }
             }
 
-            Spacer()
+            // Failure detail and the dead ends get an explanation rather than a
+            // button that cannot work.
+            if let detail = status.errorDetail {
+                DisclosureGroup(isExpanded: $showsDetail) {
+                    Text(detail)
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(Theme.Colors.silver)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.top, Theme.Spacing.xs)
+                } label: {
+                    Text("Details")
+                        .font(Theme.Fonts.caption)
+                        .foregroundStyle(Theme.Colors.cyberBlue)
+                }
+                .tint(Theme.Colors.cyberBlue)
+            }
 
-            if isPending {
-                ProgressView()
-                    .scaleEffect(0.7)
-                    .tint(Theme.Colors.cyberBlue)
-            } else {
-                actionButton
+            if let guidance {
+                Text(guidance)
+                    .font(Theme.Fonts.caption)
+                    .foregroundStyle(Theme.Colors.silver)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
         .padding(.vertical, 8)
+        .contextMenu {
+            if entry.isEditable {
+                Button { onEdit() } label: { Label("Edit", systemImage: "slider.horizontal.3") }
+
+                if entry.globalConfig?.isEnabled == true {
+                    Button { onSetEnabled(false) } label: {
+                        Label("Disable Permanently", systemImage: "pause.circle")
+                    }
+                } else {
+                    Button { onSetEnabled(true) } label: {
+                        Label("Enable Permanently", systemImage: "play.circle")
+                    }
+                }
+            }
+
+            if status.isConnected {
+                Button { onDisconnect() } label: { Label("Disconnect", systemImage: "bolt.slash") }
+            } else {
+                Button { onConnect() } label: { Label("Connect", systemImage: "bolt") }
+            }
+
+            Button(role: .destructive) { onSignOut() } label: {
+                Label("Remove Saved Login", systemImage: "person.badge.minus")
+            }
+        }
     }
+
+    // MARK: - Action Button
 
     @ViewBuilder
     private var actionButton: some View {
         switch status {
         case .connected:
-            Button("Disconnect") { onDisconnect() }
-                .font(Theme.Fonts.caption)
-                .foregroundStyle(Theme.Colors.hotPink)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
-                .background(
-                    Capsule().fill(Theme.Colors.hotPink.opacity(0.12))
-                )
-        case .disabled, .needsAuth, .needsClientRegistration:
-            Button("Connect") { onConnect() }
-                .font(Theme.Fonts.caption)
-                .foregroundStyle(Theme.Colors.cyberBlue)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
-                .background(
-                    Capsule().fill(Theme.Colors.cyberBlue.opacity(0.12))
-                )
-        case .failed:
-            Button("Retry") { onConnect() }
-                .font(Theme.Fonts.caption)
-                .foregroundStyle(Theme.Colors.neonOrange)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
-                .background(
-                    Capsule().fill(Theme.Colors.neonOrange.opacity(0.12))
-                )
+            pill("Disconnect", color: Theme.Colors.hotPink, action: onDisconnect)
+        case .disabled:
+            pill("Connect", color: Theme.Colors.cyberBlue, action: onConnect)
+        case .failed, .unknown:
+            pill("Retry", color: Theme.Colors.neonOrange, action: onConnect)
+        case .needsAuth, .needsClientRegistration:
+            // Reconnecting cannot resolve either state — the server would report the
+            // same status straight back. Editing the config is the way forward.
+            if entry.isEditable {
+                pill("Configure", color: Theme.Colors.electricPurple, action: onEdit)
+            }
         }
     }
 
-    private var dotColor: Color {
+    private func pill(_ title: String, color: Color, action: @escaping () -> Void) -> some View {
+        Button(title, action: action)
+            .font(Theme.Fonts.caption)
+            .foregroundStyle(color)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(Capsule().fill(color.opacity(0.12)))
+    }
+
+    // MARK: - Labels
+
+    /// Why a row is stuck, when it is stuck for a reason the user can act on.
+    private var guidance: String? {
         switch status {
-        case .connected: return Theme.Colors.neonGreen
-        case .disabled: return Theme.Colors.silver
-        case .failed: return Theme.Colors.hotPink
-        case .needsAuth: return Theme.Colors.neonOrange
-        case .needsClientRegistration: return Theme.Colors.electricPurple
+        case .needsAuth:
+            return entry.isEditable
+                ? "This server wants OAuth. Add a bearer token under Headers, or set up OAuth credentials in the config file."
+                : "This server wants OAuth. Its definition lives in a project config, so authenticate it there or on the server."
+        case .needsClientRegistration:
+            return "Dynamic client registration failed. Set clientId and clientSecret for this server in the config file."
+        default:
+            if entry.origin == .external, entry.globalConfig == nil {
+                return "Defined in a project config file or added at runtime — not editable from here."
+            }
+            return nil
         }
     }
 
     private var statusLabel: String {
         switch status {
         case .connected: return "Connected"
-        case .disabled: return "Disabled"
-        case .failed(let e): return "Failed: \(e)"
+        case .disabled: return entry.globalConfig?.isEnabled == false ? "Disabled in config" : "Not connected"
+        case .failed: return "Failed"
         case .needsAuth: return "Needs authentication"
-        case .needsClientRegistration(let e): return "Needs registration: \(e)"
+        case .needsClientRegistration: return "Needs client registration"
+        case .unknown(let raw): return "Unknown status: \(raw)"
         }
     }
 
-    private var statusLabelColor: Color {
+    private var statusColor: Color {
         switch status {
         case .connected: return Theme.Colors.neonGreen
         case .disabled: return Theme.Colors.silver
         case .failed: return Theme.Colors.hotPink
         case .needsAuth: return Theme.Colors.neonOrange
         case .needsClientRegistration: return Theme.Colors.electricPurple
+        case .unknown: return Theme.Colors.silver
         }
     }
-}
 
-// MARK: - MCPAddView
-
-/// Sheet for adding a new MCP server (local or remote).
-struct MCPAddView: View {
-    let apiClient: APIClient
-    let onAdded: () -> Void
-
-    @Environment(\.dismiss) private var dismiss
-
-    @State private var name = ""
-    @State private var serverType = "local" // "local" or "remote"
-    @State private var command = ""         // for local: space-separated command + args
-    @State private var remoteURL = ""       // for remote
-    @State private var envKey = ""
-    @State private var envValue = ""
-    @State private var envVars: [String: String] = [:]
-    @State private var isSaving = false
-    @State private var saveError: String? = nil
-
-    private var mcpAPI: MCPAPI { MCPAPI(client: apiClient) }
-
-    var body: some View {
-        NavigationStack {
-            ZStack {
-                Theme.Colors.deepBlack.ignoresSafeArea()
-
-                ScrollView {
-                    VStack(spacing: Theme.Spacing.lg) {
-                        // Name
-                        GlassCard {
-                            VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-                                fieldLabel("Server Name")
-                                GlassTextField(placeholder: "e.g., filesystem", text: $name)
-                            }
-                        }
-
-                        // Type picker
-                        GlassCard {
-                            VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-                                fieldLabel("Type")
-                                Picker("Type", selection: $serverType) {
-                                    Text("Local (stdio)").tag("local")
-                                    Text("Remote (SSE)").tag("remote")
-                                }
-                                .pickerStyle(.segmented)
-                            }
-                        }
-
-                        // Config
-                        GlassCard {
-                            VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-                                if serverType == "local" {
-                                    fieldLabel("Command")
-                                    GlassTextField(placeholder: "e.g., npx -y @modelcontextprotocol/server-filesystem /path", text: $command)
-                                    Text("Space-separated command and arguments")
-                                        .font(Theme.Fonts.caption)
-                                        .foregroundStyle(Theme.Colors.silver)
-                                } else {
-                                    fieldLabel("URL")
-                                    GlassTextField(placeholder: "https://mcp.example.com/sse", text: $remoteURL)
-                                }
-                            }
-                        }
-
-                        // Environment variables (local only)
-                        if serverType == "local" {
-                            GlassCard {
-                                VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-                                    fieldLabel("Environment Variables")
-
-                                    ForEach(envVars.keys.sorted(), id: \.self) { key in
-                                        HStack {
-                                            Text(key)
-                                                .font(.system(size: 12, design: .monospaced))
-                                                .foregroundStyle(Theme.Colors.neonGreen)
-                                            Text("=")
-                                                .foregroundStyle(Theme.Colors.silver)
-                                            Text(String(repeating: "•", count: min(envVars[key]?.count ?? 0, 8)))
-                                                .font(.system(size: 12, design: .monospaced))
-                                                .foregroundStyle(Theme.Colors.silver)
-                                            Spacer()
-                                            Button {
-                                                envVars.removeValue(forKey: key)
-                                            } label: {
-                                                Image(systemName: "minus.circle")
-                                                    .foregroundStyle(Theme.Colors.hotPink)
-                                            }
-                                        }
-                                        .padding(8)
-                                        .background(
-                                            RoundedRectangle(cornerRadius: 8)
-                                                .fill(Theme.Colors.slate)
-                                        )
-                                    }
-
-                                    HStack(spacing: Theme.Spacing.sm) {
-                                        GlassTextField(placeholder: "KEY", text: $envKey)
-                                            .frame(maxWidth: 100)
-                                        GlassTextField(placeholder: "value", text: $envValue)
-                                        Button {
-                                            guard !envKey.isEmpty else { return }
-                                            envVars[envKey] = envValue
-                                            envKey = ""
-                                            envValue = ""
-                                        } label: {
-                                            Image(systemName: "plus.circle.fill")
-                                                .foregroundStyle(Theme.Colors.cyberBlue)
-                                                .font(.title3)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        if let err = saveError {
-                            Text(err)
-                                .font(Theme.Fonts.caption)
-                                .foregroundStyle(Theme.Colors.hotPink)
-                                .multilineTextAlignment(.center)
-                        }
-                    }
-                    .padding(.horizontal, Theme.Spacing.md)
-                    .padding(.vertical, Theme.Spacing.lg)
-                }
-            }
-            .navigationTitle("Add MCP Server")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                        .foregroundStyle(Theme.Colors.silver)
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button {
-                        Task { await save() }
-                    } label: {
-                        if isSaving {
-                            ProgressView().scaleEffect(0.7)
-                        } else {
-                            Text("Add")
-                                .foregroundStyle(Theme.Colors.cyberBlue)
-                        }
-                    }
-                    .disabled(!isValid || isSaving)
-                }
-            }
-        }
-        .presentationBackground(Theme.Colors.carbon)
-    }
-
-    private var isValid: Bool {
-        !name.isEmpty && (serverType == "local" ? !command.isEmpty : !remoteURL.isEmpty)
-    }
-
-    private func fieldLabel(_ text: String) -> some View {
-        Text(text)
-            .font(Theme.Fonts.captionBold)
-            .foregroundStyle(Theme.Colors.silver)
-    }
-
-    private func save() async {
-        isSaving = true
-        saveError = nil
-        do {
-            let config: McpConfig
-            if serverType == "local" {
-                let parts = command.split(separator: " ").map(String.init)
-                config = .local(McpLocalConfig(
-                    type: "local",
-                    command: parts,
-                    environment: envVars.isEmpty ? nil : envVars
-                ))
-            } else {
-                config = .remote(McpRemoteConfig(type: "remote", url: remoteURL))
-            }
-            try await mcpAPI.add(name: name, config: config)
-            onAdded()
-            dismiss()
-        } catch {
-            saveError = error.localizedDescription
-        }
-        isSaving = false
-    }
+    private var dotColor: Color { statusColor }
 }

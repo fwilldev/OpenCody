@@ -4,12 +4,15 @@ import Foundation
 
 /// MCP server status, discriminated union.
 /// McpStatusConnected | McpStatusDisabled | McpStatusFailed | McpStatusNeedsAuth | McpStatusNeedsClientRegistration
-enum McpStatus: Codable, Sendable {
+enum McpStatus: Codable, Sendable, Equatable {
     case connected
     case disabled
     case failed(error: String)
     case needsAuth
     case needsClientRegistration(error: String)
+    /// A status this build does not know. The `/mcp` response is a map, so one
+    /// unrecognised entry must not take the whole list down.
+    case unknown(status: String)
 
     var statusString: String {
         switch self {
@@ -18,6 +21,29 @@ enum McpStatus: Codable, Sendable {
         case .failed: return "failed"
         case .needsAuth: return "needs_auth"
         case .needsClientRegistration: return "needs_client_registration"
+        case .unknown(let status): return status
+        }
+    }
+
+    /// The server-supplied failure detail, when there is one.
+    var errorDetail: String? {
+        switch self {
+        case .failed(let error), .needsClientRegistration(let error): return error
+        default: return nil
+        }
+    }
+
+    var isConnected: Bool { self == .connected }
+
+    /// Whether tapping "Connect" can plausibly change this status.
+    ///
+    /// `needsAuth` and `needsClientRegistration` cannot be resolved by reconnecting —
+    /// they need credentials the client has to supply first — so the UI must not
+    /// offer a retry that is guaranteed to land on the same status again.
+    var isConnectActionable: Bool {
+        switch self {
+        case .disabled, .failed, .unknown: return true
+        case .connected, .needsAuth, .needsClientRegistration: return false
         }
     }
 
@@ -35,19 +61,17 @@ enum McpStatus: Codable, Sendable {
         case "disabled":
             self = .disabled
         case "failed":
-            let error = try container.decode(String.self, forKey: .error)
-            self = .failed(error: error)
+            // Be tolerant: the detail is documented as required, but a missing one
+            // is no reason to fail the whole map.
+            self = .failed(error: try container.decodeIfPresent(String.self, forKey: .error) ?? "Unknown error")
         case "needs_auth":
             self = .needsAuth
         case "needs_client_registration":
-            let error = try container.decode(String.self, forKey: .error)
-            self = .needsClientRegistration(error: error)
-        default:
-            throw DecodingError.dataCorruptedError(
-                forKey: .status,
-                in: container,
-                debugDescription: "Unknown MCP status: \(status)"
+            self = .needsClientRegistration(
+                error: try container.decodeIfPresent(String.self, forKey: .error) ?? "Client registration failed"
             )
+        default:
+            self = .unknown(status: status)
         }
     }
 
@@ -66,6 +90,8 @@ enum McpStatus: Codable, Sendable {
         case .needsClientRegistration(let error):
             try container.encode("needs_client_registration", forKey: .status)
             try container.encode(error, forKey: .error)
+        case .unknown(let status):
+            try container.encode(status, forKey: .status)
         }
     }
 }

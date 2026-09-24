@@ -11,6 +11,9 @@ struct RootView: View {
     /// Notification manager — created lazily once dependencies are available.
     @State private var notificationManager: SessionNotificationManager?
 
+    /// Release notes, shown once per release.
+    @State private var showWhatsNew = false
+
     var body: some View {
         Group {
             if sizeClass == .compact {
@@ -51,8 +54,13 @@ struct RootView: View {
         .task {
             serverStore.load()
 
-            // Record app launch for tip prompt eligibility tracking.
-            TipPromptService.shared.recordAppLaunch()
+            if WhatsNew.isPending() {
+                showWhatsNew = true
+                WhatsNew.markSeen()
+            }
+
+            // Record app launch for tip / rating prompt eligibility tracking.
+            PromptEngagement.recordLaunch()
 
             // Verify has-tipped state against StoreKit transaction history
             // so reinstalls don't re-prompt users who already supported.
@@ -69,6 +77,9 @@ struct RootView: View {
         }
         .onDisappear {
             notificationManager?.stopObserving()
+        }
+        .sheet(isPresented: $showWhatsNew) {
+            WhatsNewView()
         }
         .environmentObject(serverStore)
     }

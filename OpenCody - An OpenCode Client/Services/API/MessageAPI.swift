@@ -122,6 +122,7 @@ struct MessageAPI: Sendable {
         limit: Int? = nil,
         before: String? = nil
     ) async throws -> [MessageWithPartsResponse] {
+        if client.apiVersion == .v2 { return try await v2List(sessionID: sessionID, limit: limit, before: before) }
         var extra: [URLQueryItem] = []
         if let limit { extra.append(URLQueryItem(name: "limit", value: String(limit))) }
         if let before { extra.append(URLQueryItem(name: "before", value: before)) }
@@ -140,6 +141,7 @@ struct MessageAPI: Sendable {
 
     /// Get a single message with its parts.
     func get(sessionID: String, messageID: String) async throws -> MessageWithPartsResponse {
+        if client.apiVersion == .v2 { return try await v2Get(sessionID: sessionID, messageID: messageID) }
         let data = try await client.requestData(.get("/session/\(sessionID)/message/\(messageID)", queryItems: query()))
         return try JSONDecoder().decode(MessageWithPartsResponse.self, from: data)
     }
@@ -162,6 +164,13 @@ struct MessageAPI: Sendable {
         messageID: String? = nil,
         attachments: [PromptAttachment] = []
     ) async throws {
+        if client.apiVersion == .v2 {
+            // 2.x has no per-turn system prompt or tool overrides.
+            return try await v2PromptAsync(
+                sessionID: sessionID, text: text, modelID: modelID, providerID: providerID,
+                agent: agent, variant: variant, messageID: messageID, attachments: attachments
+            )
+        }
         let body = makePromptBody(
             text: text,
             modelID: modelID,
@@ -200,6 +209,7 @@ struct MessageAPI: Sendable {
         messageID: String? = nil,
         attachments: [PromptAttachment] = []
     ) async throws -> MessageWithPartsResponse {
+        if client.apiVersion == .v2 { throw OpenCodeError.unsupported("Blocking prompts") }
         let body = makePromptBody(
             text: text,
             modelID: modelID,
@@ -229,6 +239,7 @@ struct MessageAPI: Sendable {
     ///
     /// Unlike `SessionAPI.revert`, this does not undo file changes the message caused.
     func delete(sessionID: String, messageID: String) async throws {
+        if client.apiVersion == .v2 { throw OpenCodeError.unsupported("Deleting messages") }
         try await client.requestVoid(
             APIEndpoint(
                 path: "/session/\(sessionID)/message/\(messageID)",
@@ -241,6 +252,7 @@ struct MessageAPI: Sendable {
 
     /// Delete a single part from a message.
     func deletePart(sessionID: String, messageID: String, partID: String) async throws {
+        if client.apiVersion == .v2 { throw OpenCodeError.unsupported("Deleting message parts") }
         try await client.requestVoid(
             APIEndpoint(
                 path: "/session/\(sessionID)/message/\(messageID)/part/\(partID)",
@@ -253,6 +265,7 @@ struct MessageAPI: Sendable {
 
     /// Replace a part with an edited version.
     func updatePart(sessionID: String, messageID: String, part: Part) async throws -> Part {
+        if client.apiVersion == .v2 { throw OpenCodeError.unsupported("Editing message parts") }
         let data = try await client.requestData(
             APIEndpoint(
                 path: "/session/\(sessionID)/message/\(messageID)/part/\(part.id)",

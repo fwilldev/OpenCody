@@ -5,6 +5,7 @@
 //  Created by Fabian Will on 25.02.26.
 //
 
+import StoreKit
 import SwiftUI
 
 // MARK: - DashboardView
@@ -21,9 +22,11 @@ struct DashboardView: View {
 
     /// Tracks how many times this view has appeared during the current app session.
     /// A count > 1 means the user navigated away (e.g. into a chat) and came back —
-    /// which is the "natural moment" for the occasional tip prompt.
+    /// which is the "natural moment" for the occasional tip or rating prompt.
     @State private var viewAppearCount = 0
     @Bindable private var tipPromptService = TipPromptService.shared
+    @Bindable private var reviewPromptService = ReviewPromptService.shared
+    @Environment(\.requestReview) private var requestReview
 
     // MARK: - Init
 
@@ -168,21 +171,79 @@ struct DashboardView: View {
         }
         .onAppear {
             viewAppearCount += 1
-            // Only consider showing the prompt when returning to the dashboard
+            // Only consider showing a prompt when returning to the dashboard
             // after navigating away (e.g. after closing a chat), never on first display.
-            if viewAppearCount > 1 && tipPromptService.shouldShowPrompt {
+            // At most one ask per visit — rating first, since it costs the user nothing;
+            // the tip prompt has higher usage thresholds and comes later.
+            guard viewAppearCount > 1 else { return }
+            if reviewPromptService.shouldShowPrompt {
+                reviewPromptService.recordPromptShown()
+                reviewPromptService.showPrompt = true
+            } else if tipPromptService.shouldShowPrompt {
                 tipPromptService.recordPromptShown()
                 tipPromptService.showPrompt = true
             }
         }
-        .alert("Enjoying OpenCody?", isPresented: $tipPromptService.showPrompt) {
-            Button("Sure, show me") {
-                showTipJar = true
+        .alert(occasionalPromptTitle, isPresented: occasionalPromptBinding) {
+            if isReviewPromptActive {
+                Button("Rate on the App Store") {
+                    reviewPromptService.markHasRated()
+                    requestReview()
+                }
+            } else {
+                Button("Sure, show me") {
+                    showTipJar = true
+                }
             }
             Button("Maybe later", role: .cancel) { }
         } message: {
-            Text("This app is a solo project and stays free and ad-free. If it's been useful to you, a small tip would mean a lot and helps keep development going.")
+            Text(occasionalPromptMessage)
         }
+    }
+
+    // MARK: - Occasional Prompts
+
+    private enum OccasionalPrompt {
+        case review
+        case tip
+    }
+
+    /// Which occasional ask is currently armed, if any. Reading both flags here (rather
+    /// than only inside the alert's binding) is what registers them for observation, so
+    /// arming either one actually re-renders.
+    private var activeOccasionalPrompt: OccasionalPrompt? {
+        if reviewPromptService.showPrompt { return .review }
+        if tipPromptService.showPrompt { return .tip }
+        return nil
+    }
+
+    /// Whether the rating ask (rather than the tip ask) is the one currently showing.
+    private var isReviewPromptActive: Bool {
+        activeOccasionalPrompt == .review
+    }
+
+    private var occasionalPromptTitle: String {
+        isReviewPromptActive ? "Liking OpenCody so far?" : "Enjoying OpenCody?"
+    }
+
+    private var occasionalPromptMessage: String {
+        isReviewPromptActive
+            ? "If OpenCody has been useful to you, a good rating helps other users find it, and it's the easiest way to support the developer. Most people only rate when they have problems, so good feedback is always appreciated. It only takes a moment."
+            : "This app is a solo project and stays free and ad-free. If it's been useful to you, a small tip would mean a lot and helps keep development going."
+    }
+
+    /// Both asks share one alert: `onAppear` never arms more than one at a time, and
+    /// stacking two `.alert` modifiers on the same view risks one silently winning.
+    private var occasionalPromptBinding: Binding<Bool> {
+        let isArmed = activeOccasionalPrompt != nil
+        return Binding(
+            get: { isArmed },
+            set: { isPresented in
+                guard !isPresented else { return }
+                reviewPromptService.showPrompt = false
+                tipPromptService.showPrompt = false
+            }
+        )
     }
 
     // MARK: - Subviews
@@ -335,45 +396,21 @@ struct DashboardView: View {
 // MARK: - SkeletonCard
 
 private struct SkeletonCard: View {
-    @State private var shimmer: Bool = false
-
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
             HStack {
-                RoundedRectangle(cornerRadius: 4)
-                    .fill(shimmerGradient)
-                    .frame(width: 160, height: 14)
+                SkeletonBlock(width: 160, height: 14)
                 Spacer()
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(shimmerGradient)
-                    .frame(width: 50, height: 20)
+                SkeletonBlock(width: 50, height: 20, cornerRadius: 10)
             }
-            RoundedRectangle(cornerRadius: 4)
-                .fill(shimmerGradient)
-                .frame(width: 220, height: 11)
+            SkeletonBlock(width: 220, height: 11)
             HStack {
-                RoundedRectangle(cornerRadius: 4)
-                    .fill(shimmerGradient)
-                    .frame(width: 120, height: 11)
+                SkeletonBlock(width: 120, height: 11)
                 Spacer()
-                RoundedRectangle(cornerRadius: 4)
-                    .fill(shimmerGradient)
-                    .frame(width: 50, height: 11)
+                SkeletonBlock(width: 50, height: 11)
             }
         }
         .padding(Theme.Spacing.md)
         .glassCard()
-        .onAppear { withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) { shimmer = true } }
-    }
-
-    private var shimmerGradient: LinearGradient {
-        LinearGradient(
-            colors: [
-                Theme.Colors.cloud.opacity(shimmer ? 0.10 : 0.04),
-                Theme.Colors.cloud.opacity(shimmer ? 0.04 : 0.10)
-            ],
-            startPoint: .leading,
-            endPoint: .trailing
-        )
     }
 }

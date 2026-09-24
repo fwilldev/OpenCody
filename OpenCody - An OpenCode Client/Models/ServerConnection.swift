@@ -19,6 +19,9 @@ final class ServerConnection: Identifiable, Codable {
     var createdAt: Date
     var lastConnectedAt: Date?
     var isDefault: Bool
+    /// API generation the server speaks. Defaults to `.v1` for servers saved before
+    /// the setting existed.
+    var apiVersion: ServerAPIVersion
 
     /// Computed base URL — not stored by SwiftData.
     var baseURL: String {
@@ -39,7 +42,8 @@ final class ServerConnection: Identifiable, Codable {
         keychainIdentifier: String = UUID().uuidString,
         createdAt: Date = Date(),
         lastConnectedAt: Date? = nil,
-        isDefault: Bool = false
+        isDefault: Bool = false,
+        apiVersion: ServerAPIVersion = .v1
     ) {
         self.id = id
         self.name = name
@@ -51,6 +55,7 @@ final class ServerConnection: Identifiable, Codable {
         self.createdAt = createdAt
         self.lastConnectedAt = lastConnectedAt
         self.isDefault = isDefault
+        self.apiVersion = apiVersion
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -64,6 +69,7 @@ final class ServerConnection: Identifiable, Codable {
         case createdAt
         case lastConnectedAt
         case isDefault
+        case apiVersion
     }
 
     init(from decoder: Decoder) throws {
@@ -78,6 +84,7 @@ final class ServerConnection: Identifiable, Codable {
         createdAt = try container.decode(Date.self, forKey: .createdAt)
         lastConnectedAt = try container.decodeIfPresent(Date.self, forKey: .lastConnectedAt)
         isDefault = try container.decode(Bool.self, forKey: .isDefault)
+        apiVersion = (try? container.decodeIfPresent(ServerAPIVersion.self, forKey: .apiVersion)) ?? .v1
     }
 
     func encode(to encoder: Encoder) throws {
@@ -92,5 +99,6 @@ final class ServerConnection: Identifiable, Codable {
         try container.encode(createdAt, forKey: .createdAt)
         try container.encodeIfPresent(lastConnectedAt, forKey: .lastConnectedAt)
         try container.encode(isDefault, forKey: .isDefault)
+        try container.encode(apiVersion, forKey: .apiVersion)
     }
 }

@@ -96,7 +96,9 @@ struct SessionActionsMenu: View {
             }
 
             // Share / Unshare
-            if session.share != nil {
+            if !apiClient.supportsSessionSharing {
+                EmptyView()
+            } else if session.share != nil {
                 Button {
                     Task { await unshareSession() }
                 } label: {
@@ -115,15 +117,6 @@ struct SessionActionsMenu: View {
                     Label("Share", systemImage: "square.and.arrow.up")
                 }
             }
-
-            Divider()
-
-            // Abort
-            Button(role: .destructive) {
-                Task { await abortSession() }
-            } label: {
-                Label("Abort", systemImage: "stop.circle")
-            }
         } label: {
             VStack(spacing: 2) {
                 Text(session.id.prefix(8))
@@ -140,7 +133,13 @@ struct SessionActionsMenu: View {
             TodoListView(session: session, apiClient: apiClient, viewModel: viewModel)
         }
         .sheet(isPresented: $showFileExplorer) {
-            FileExplorerView(session: session, apiClient: apiClient)
+            FileExplorerView(
+                session: session,
+                apiClient: apiClient,
+                onReference: { path in
+                    viewModel.referenceFile(path: path)
+                }
+            )
         }
         .sheet(isPresented: $showContextUsage) {
             ContextUsageView(session: session, viewModel: viewModel, apiClient: apiClient)
@@ -246,12 +245,13 @@ struct SessionActionsMenu: View {
                 // Copy to clipboard always
                 UIPasteboard.general.string = urlString
                 // Also present native share sheet if URL is valid
-                if let url = URL(string: urlString) {
+                if let url = URL(string: urlString), let presenter = topmostViewController() {
                     let av = UIActivityViewController(activityItems: [url], applicationActivities: nil)
-                    if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-                       let root = scene.windows.first?.rootViewController {
-                        root.present(av, animated: true)
+                    if let popover = av.popoverPresentationController {
+                        popover.sourceView = presenter.view
+                        popover.sourceRect = CGRect(x: presenter.view.bounds.midX, y: presenter.view.bounds.midY, width: 1, height: 1)
                     }
+                    presenter.present(av, animated: true)
                 } else {
                     successMessage = "Share link copied to clipboard."
                 }
@@ -273,11 +273,21 @@ struct SessionActionsMenu: View {
         }
     }
 
-    private func abortSession() async {
-        do {
-            try await viewModel.abort()
-        } catch {
-            actionError = error.localizedDescription
+    /// The view controller currently on top of the presentation stack.
+    ///
+    /// Presenting on the window's root controller fails ("already presenting") whenever
+    /// a sheet from this menu is open, so walk down to whatever is actually frontmost.
+    @MainActor
+    private func topmostViewController() -> UIViewController? {
+        let scene = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive }
+            ?? UIApplication.shared.connectedScenes.first as? UIWindowScene
+        guard var top = scene?.windows.first(where: \.isKeyWindow)?.rootViewController
+            ?? scene?.windows.first?.rootViewController else { return nil }
+        while let presented = top.presentedViewController {
+            top = presented
         }
+        return top
     }
 }

@@ -173,9 +173,9 @@ private struct FileResultRow: View {
         Button(action: onTap) {
             HStack(spacing: Theme.Spacing.sm) {
                 // File type icon
-                Image(systemName: fileIcon(for: fileName))
+                Image(systemName: FileIconStyle.symbol(for: fileName))
                     .font(.body)
-                    .foregroundStyle(fileIconColor(for: fileName))
+                    .foregroundStyle(FileIconStyle.color(for: fileName))
                     .frame(width: 24)
 
                 // Path with filename highlighted
@@ -205,47 +205,5 @@ private struct FileResultRow: View {
         }
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }
-    }
-
-    // MARK: - File Icon Helpers (same as FileExplorerView)
-
-    private func fileIcon(for name: String) -> String {
-        let ext = URL(fileURLWithPath: name).pathExtension.lowercased()
-        switch ext {
-        case "swift", "ts", "tsx", "js", "jsx", "py", "go", "rs", "java", "kt", "c", "cpp", "h":
-            return "chevron.left.forwardslash.chevron.right"
-        case "json", "yaml", "yml", "toml", "xml", "plist":
-            return "doc.text"
-        case "md", "txt", "rtf":
-            return "doc.plaintext"
-        case "png", "jpg", "jpeg", "gif", "svg", "webp", "ico":
-            return "photo"
-        case "css", "scss", "less":
-            return "paintbrush"
-        case "lock":
-            return "lock.fill"
-        default:
-            return "doc"
-        }
-    }
-
-    private func fileIconColor(for name: String) -> Color {
-        let ext = URL(fileURLWithPath: name).pathExtension.lowercased()
-        switch ext {
-        case "swift":
-            return Theme.Colors.neonOrange
-        case "ts", "tsx":
-            return Theme.Colors.cyberBlue
-        case "js", "jsx":
-            return Theme.Colors.javascriptYellow
-        case "json", "yaml", "yml", "toml", "xml", "plist":
-            return Theme.Colors.electricPurple
-        case "md", "txt":
-            return Theme.Colors.silver
-        case "css", "scss", "less":
-            return Theme.Colors.hotPink
-        default:
-            return Theme.Colors.silver
-        }
     }
 }

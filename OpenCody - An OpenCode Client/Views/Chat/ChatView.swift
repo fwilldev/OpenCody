@@ -57,141 +57,14 @@ struct ChatView: View {
                     .padding(.top, Theme.Spacing.xs)
                 }
 
-                // Message list
-                ScrollViewReader { proxy in
-                    ScrollView {
-                        LazyVStack(spacing: 8) {
-                            // Load more button at top
-                            if viewModel.hasMoreMessages {
-                                Button {
-                                    Task { await viewModel.loadMore() }
-                                } label: {
-                                    HStack {
-                                        if viewModel.isLoadingMore {
-                                            ProgressView()
-                                                .tint(Theme.Colors.cyberBlue)
-                                                .scaleEffect(0.8)
-                                        }
-                                        Text(viewModel.isLoadingMore ? "Loading…" : "Load Earlier Messages")
-                                            .font(.caption)
-                                            .foregroundStyle(Theme.Colors.cyberBlue)
-                                    }
-                                    .padding(.vertical, Theme.Spacing.sm)
-                                }
-                            }
-
-                            // Loading indicator for initial message load
-                            if viewModel.messages.isEmpty && viewModel.hasMoreMessages {
-                                VStack(spacing: Theme.Spacing.sm) {
-                                    ProgressView()
-                                        .tint(Theme.Colors.cyberBlue)
-                                    Text("Loading messages…")
-                                        .font(Theme.Fonts.caption)
-                                        .foregroundStyle(Theme.Colors.smoke)
-                                }
-                                .frame(maxWidth: .infinity)
-                                .padding(.top, 60)
-                            }
-
-                            ForEach(viewModel.displayMessages) { msgWithParts in
-                                MessageBubbleView(messageWithParts: msgWithParts, viewModel: viewModel)
-                                    .transition(
-                                        .asymmetric(
-                                            insertion: .move(edge: .bottom)
-                                                .combined(with: .opacity)
-                                                .combined(with: .scale(
-                                                    scale: 0.96,
-                                                    anchor: msgWithParts.message.role == .user ? .bottomTrailing : .bottomLeading
-                                                )),
-                                            removal: .opacity
-                                        )
-                                    )
-                            }
-
-                            // Typing indicator while waiting for AI response
-                            if viewModel.isGenerating {
-                                TypingIndicatorView()
-                                    .padding(.vertical, Theme.Spacing.xs)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .transition(
-                                        .asymmetric(
-                                            insertion: .move(edge: .bottom)
-                                                .combined(with: .opacity)
-                                                .combined(with: .scale(scale: 0.9, anchor: .bottomLeading)),
-                                            removal: .opacity
-                                        )
-                                    )
-                            }
-
-                            // Hidden steps indicator
-                            if viewModel.hiddenStepMessageCount > 0 {
-                                HStack(spacing: 6) {
-                                    Image(systemName: "arrow.triangle.branch")
-                                        .font(.system(size: 10))
-                                        .foregroundStyle(Theme.Colors.smoke)
-                                    Text("\(viewModel.hiddenStepMessageCount) intermediate steps hidden")
-                                        .font(.system(size: 11, weight: .medium))
-                                        .foregroundStyle(Theme.Colors.smoke)
-                                }
-                                .padding(.vertical, 6)
-                                .padding(.horizontal, 12)
-                                .background(
-                                    Capsule()
-                                        .fill(Theme.Colors.fillSubtle)
-                                        .overlay(
-                                            Capsule()
-                                                .stroke(Theme.Colors.hairline, lineWidth: 1)
-                                        )
-                                )
-                                .frame(maxWidth: .infinity)
-                            }
-                            // Bottom anchor for auto-scroll
-                            Color.clear
-                                .frame(height: 1)
-                                .id("bottom")
-                        }
-                        .padding(.horizontal, Theme.Spacing.md)
-                        .padding(.vertical, Theme.Spacing.sm)
-                        // Animate message arrival (new bubbles slide up) and the
-                        // typing indicator. Keyed on count so streaming updates and
-                        // local-to-server ID swaps don't re-trigger transitions.
-                        .animation(.spring(response: 0.38, dampingFraction: 0.8), value: viewModel.displayMessages.count)
-                        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: viewModel.isGenerating)
-                        // Track scroll position to detect when user scrolls away from bottom
-                        .onGeometryChange(for: CGFloat.self) { geo in
-                            geo.frame(in: .named("chatScroll")).maxY
-                        } action: { contentBottom in
-                            // Content bottom relative to scroll viewport.
-                            // When the bottom of the content is near the bottom of the viewport,
-                            // the user is "at bottom".  Allow generous slack (80pt) for rounding
-                            // and partial-pixel differences.
-                            isAtBottom = contentBottom < scrollViewHeight + 80
-                        }
-                    }
-                    .coordinateSpace(name: "chatScroll")
-                    .onGeometryChange(for: CGFloat.self) { geo in
-                        geo.size.height
-                    } action: { height in
-                        scrollViewHeight = height
-                    }
-                    .defaultScrollAnchor(.bottom)
-                    .scrollDismissesKeyboard(.interactively)
-                    .onTapGesture {
-                        isInputFocused = false
-                    }
-                    .onChange(of: viewModel.scrollTrigger) { _, _ in
-                        if isAtBottom {
-                            withAnimation(.easeOut(duration: 0.15)) {
-                                proxy.scrollTo("bottom", anchor: .bottom)
-                            }
-                        }
-                    }
-                    .onChange(of: viewModel.isGenerating) { _, newValue in
-                        guard newValue else { return }
-                        withAnimation(.easeOut(duration: 0.25)) {
-                            proxy.scrollTo("bottom", anchor: .bottom)
-                        }
-                    }
+                // Message list — replaced by placeholders until the history has loaded,
+                // so the scroll view is only ever laid out with the real content. Building
+                // it while empty left `defaultScrollAnchor(.bottom)` anchored to nothing,
+                // which showed a blank chat until the user scrolled.
+                if viewModel.isLoadingMessages {
+                    messagesLoadingState
+                } else {
+                    messageList
                 }
             }
 
@@ -251,6 +124,191 @@ struct ChatView: View {
             viewModel.stopObservingEvents()
         }
         .toolbar(.hidden, for: .tabBar)
+    }
+
+    // MARK: - Message List
+
+    private var messageList: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(spacing: 8) {
+                    // Load more button at top
+                    if viewModel.hasMoreMessages {
+                        Button {
+                            Task { await viewModel.loadMore() }
+                        } label: {
+                            HStack {
+                                if viewModel.isLoadingMore {
+                                    ProgressView()
+                                        .tint(Theme.Colors.cyberBlue)
+                                        .scaleEffect(0.8)
+                                }
+                                Text(viewModel.isLoadingMore ? "Loading…" : "Load Earlier Messages")
+                                    .font(.caption)
+                                    .foregroundStyle(Theme.Colors.cyberBlue)
+                            }
+                            .padding(.vertical, Theme.Spacing.sm)
+                        }
+                    }
+
+                    ForEach(viewModel.displayMessages) { msgWithParts in
+                        MessageBubbleView(messageWithParts: msgWithParts, viewModel: viewModel)
+                            .transition(
+                                .asymmetric(
+                                    insertion: .move(edge: .bottom)
+                                        .combined(with: .opacity)
+                                        .combined(with: .scale(
+                                            scale: 0.96,
+                                            anchor: msgWithParts.message.role == .user ? .bottomTrailing : .bottomLeading
+                                        )),
+                                    removal: .opacity
+                                )
+                            )
+                    }
+
+                    // Typing indicator while waiting for AI response
+                    if viewModel.isGenerating {
+                        TypingIndicatorView()
+                            .padding(.vertical, Theme.Spacing.xs)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .transition(
+                                .asymmetric(
+                                    insertion: .move(edge: .bottom)
+                                        .combined(with: .opacity)
+                                        .combined(with: .scale(scale: 0.9, anchor: .bottomLeading)),
+                                    removal: .opacity
+                                )
+                            )
+                    }
+
+                    // Hidden steps indicator
+                    if viewModel.hiddenStepMessageCount > 0 {
+                        HStack(spacing: 6) {
+                            Image(systemName: "arrow.triangle.branch")
+                                .font(.system(size: 10))
+                                .foregroundStyle(Theme.Colors.smoke)
+                            Text("\(viewModel.hiddenStepMessageCount) intermediate steps hidden")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(Theme.Colors.smoke)
+                        }
+                        .padding(.vertical, 6)
+                        .padding(.horizontal, 12)
+                        .background(
+                            Capsule()
+                                .fill(Theme.Colors.fillSubtle)
+                                .overlay(
+                                    Capsule()
+                                        .stroke(Theme.Colors.hairline, lineWidth: 1)
+                                )
+                        )
+                        .frame(maxWidth: .infinity)
+                    }
+                    // Bottom anchor for auto-scroll
+                    Color.clear
+                        .frame(height: 1)
+                        .id("bottom")
+                }
+                .padding(.horizontal, Theme.Spacing.md)
+                .padding(.vertical, Theme.Spacing.sm)
+                // Animate message arrival (new bubbles slide up) and the
+                // typing indicator. Keyed on count so streaming updates and
+                // local-to-server ID swaps don't re-trigger transitions.
+                .animation(.spring(response: 0.38, dampingFraction: 0.8), value: viewModel.displayMessages.count)
+                .animation(.spring(response: 0.35, dampingFraction: 0.85), value: viewModel.isGenerating)
+                // Track scroll position to detect when user scrolls away from bottom
+                .onGeometryChange(for: CGFloat.self) { geo in
+                    geo.frame(in: .named("chatScroll")).maxY
+                } action: { contentBottom in
+                    // Content bottom relative to scroll viewport.
+                    // When the bottom of the content is near the bottom of the viewport,
+                    // the user is "at bottom".  Allow generous slack (80pt) for rounding
+                    // and partial-pixel differences.
+                    isAtBottom = contentBottom < scrollViewHeight + 80
+                }
+            }
+            .coordinateSpace(name: "chatScroll")
+            .onGeometryChange(for: CGFloat.self) { geo in
+                geo.size.height
+            } action: { height in
+                scrollViewHeight = height
+            }
+            .defaultScrollAnchor(.bottom)
+            .scrollDismissesKeyboard(.interactively)
+            .onTapGesture {
+                isInputFocused = false
+            }
+            .onChange(of: viewModel.scrollTrigger) { _, _ in
+                if isAtBottom {
+                    withAnimation(.easeOut(duration: 0.15)) {
+                        proxy.scrollTo("bottom", anchor: .bottom)
+                    }
+                }
+            }
+            .onChange(of: viewModel.isGenerating) { _, newValue in
+                guard newValue else { return }
+                withAnimation(.easeOut(duration: 0.25)) {
+                    proxy.scrollTo("bottom", anchor: .bottom)
+                }
+            }
+            .onAppear {
+                // The lazy rows only report their real heights over the next couple of
+                // layout passes, so the bottom anchor can land short on first display.
+                // Nudge it once now and once after the heights have settled.
+                proxy.scrollTo("bottom", anchor: .bottom)
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(150))
+                    proxy.scrollTo("bottom", anchor: .bottom)
+                }
+            }
+        }
+    }
+
+    // MARK: - Loading State
+
+    /// Placeholder bubbles shown while the session's history is being fetched.
+    private var messagesLoadingState: some View {
+        VStack(spacing: Theme.Spacing.md) {
+            HStack(spacing: 6) {
+                ProgressView()
+                    .scaleEffect(0.7)
+                    .tint(Theme.Colors.cyberBlue)
+                Text("Loading messages…")
+                    .font(Theme.Fonts.caption)
+                    .foregroundStyle(Theme.Colors.smoke)
+            }
+            .padding(.top, Theme.Spacing.sm)
+
+            ForEach(0..<4, id: \.self) { index in
+                skeletonBubble(isUser: index % 2 == 1)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, Theme.Spacing.md)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityLabel("Loading messages")
+    }
+
+    private func skeletonBubble(isUser: Bool) -> some View {
+        HStack {
+            if isUser { Spacer(minLength: 60) }
+
+            VStack(alignment: .leading, spacing: 8) {
+                SkeletonBlock(width: isUser ? 140 : 200, height: 11)
+                SkeletonBlock(width: isUser ? 80 : 150, height: 11)
+            }
+            .padding(Theme.Spacing.md)
+            .background(
+                RoundedRectangle(cornerRadius: 14)
+                    .fill(isUser ? Theme.Colors.slate : Theme.Colors.graphite)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14)
+                            .stroke(Theme.Colors.hairline, lineWidth: 1)
+                    )
+            )
+
+            if !isUser { Spacer(minLength: 60) }
+        }
     }
 
     // MARK: - Permission Overlay

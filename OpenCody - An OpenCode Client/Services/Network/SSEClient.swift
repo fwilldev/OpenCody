@@ -50,6 +50,9 @@ final class SSEClient {
     let onStateChange: @MainActor (SSEClientState) -> Void
     let maxReconnectAttempts: Int
 
+    /// Folds an OpenCode 2.x stream into v1 events; `nil` for a v1 server.
+    let v2Translator: V2EventTranslator?
+
     /// Duration in seconds before a silent connection is considered dead.
     /// Matches the reference implementation's `HEARTBEAT_TIMEOUT_MS = 15_000`.
     let heartbeatTimeout: TimeInterval
@@ -60,6 +63,10 @@ final class SSEClient {
     /// funnelled through this stream so that MainActor receives them in strict order.
     private var eventContinuation: AsyncStream<SSEEvent>.Continuation?
     private var eventConsumerTask: Task<Void, Never>?
+
+    /// 2.x only: raw payloads awaiting translation, and the task translating them.
+    private var v2Continuation: AsyncStream<String>.Continuation?
+    private var v2ConsumerTask: Task<Void, Never>?
 
     /// Heartbeat watchdog task — cancels & reconnects when no activity is detected.
     private var heartbeatTask: Task<Void, Never>?
@@ -75,6 +82,7 @@ final class SSEClient {
         directoryFilter: String?,
         maxReconnectAttempts: Int = 5,
         heartbeatTimeout: TimeInterval = 15.0,
+        v2Translator: V2EventTranslator? = nil,
         onEvent: @escaping @MainActor (SSEEvent) -> Void,
         onStateChange: @escaping @MainActor (SSEClientState) -> Void
     ) {
@@ -83,6 +91,7 @@ final class SSEClient {
         self.directoryFilter = directoryFilter
         self.maxReconnectAttempts = maxReconnectAttempts
         self.heartbeatTimeout = heartbeatTimeout
+        self.v2Translator = v2Translator
         self.onEvent = onEvent
         self.onStateChange = onStateChange
     }
@@ -92,7 +101,8 @@ final class SSEClient {
     func start() {
         // Use /global/event — the server sends ALL events; we filter client-side by directory.
         // Note: /global/event does NOT accept a `directory` query parameter (only /event does).
-        let urlString = baseURL + "/global/event"
+        // 2.x streams every location's events from `/api/event`.
+        let urlString = baseURL + (v2Translator == nil ? "/global/event" : "/api/event")
 
         guard let url = URL(string: urlString) else { return }
 
@@ -107,6 +117,33 @@ final class SSEClient {
             for await event in stream {
                 onEvent(event)
             }
+        }
+
+        // 2.x: raw payloads are translated in order by one consumer, then take the
+        // same filter/normalize/parse path as a v1 `GlobalEvent`.
+        let v2Continuation: AsyncStream<String>.Continuation?
+        if let translator = v2Translator {
+            let (rawStream, rawContinuation) = AsyncStream<String>.makeStream()
+            v2Continuation = rawContinuation
+            self.v2Continuation = rawContinuation
+            let filter = self.shouldHandleEvent(data:)
+            let normalize = self.normalizeEvent(eventName:data:)
+            self.v2ConsumerTask = Task {
+                for await raw in rawStream {
+                    for translated in await translator.translate(raw) where filter(translated) {
+                        let normalized = normalize("message", translated)
+                        guard let event = try? SSEEvent.parse(eventName: normalized.name, data: normalized.data) else {
+                            #if DEBUG
+                            print("[SSEClient] Failed to parse translated event '\(normalized.name)'")
+                            #endif
+                            continue
+                        }
+                        continuation.yield(event)
+                    }
+                }
+            }
+        } else {
+            v2Continuation = nil
         }
 
         // Capture callbacks and state for use in the nonisolated handler
@@ -139,6 +176,11 @@ final class SSEClient {
             onMessageCallback: { eventType, messageEvent in
                 activityTracker.touch()
                 let data = messageEvent.data
+
+                if let v2Continuation {
+                    v2Continuation.yield(data)
+                    return
+                }
 
                 guard shouldHandleEventFn(data) else { return }
 
@@ -209,6 +251,10 @@ final class SSEClient {
         heartbeatTask = nil
         eventConsumerTask?.cancel()
         eventConsumerTask = nil
+        v2ConsumerTask?.cancel()
+        v2ConsumerTask = nil
+        v2Continuation?.finish()
+        v2Continuation = nil
         eventContinuation?.finish()
         eventContinuation = nil
         eventSource?.stop()

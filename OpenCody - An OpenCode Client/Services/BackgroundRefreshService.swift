@@ -71,6 +71,8 @@ final class BackgroundRefreshService {
                 print("[BackgroundRefreshService] Refresh already scheduled — skipping.")
             case .unavailable:
                 print("[BackgroundRefreshService] Background refresh unavailable (simulator or restricted).")
+            case .immediateRunIneligible:
+                print("[BackgroundRefreshService] Not eligible for an immediate run — waiting for the system.")
             @unknown default:
                 print("[BackgroundRefreshService] Scheduling error: \(error.localizedDescription)")
             }

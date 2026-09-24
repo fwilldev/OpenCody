@@ -13,6 +13,7 @@ struct AgentAPI: Sendable {
 
     /// List all available agents.
     func list() async throws -> [Agent] {
+        if client.apiVersion == .v2 { return try await v2List() }
         let data = try await client.requestData(.get("/agent"))
         return try JSONDecoder().decode([Agent].self, from: data)
     }

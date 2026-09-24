@@ -5,136 +5,204 @@
 
 import SwiftUI
 
-/// Lists all providers with their auth status and model count.
-/// Tap a provider to see details and manage API key.
+/// Lists providers with their auth status, split into connected and available.
+///
+/// Providers the server exposes an auth method for can be connected from here.
+/// Providers without one are configured through environment variables or the config
+/// file; their rows say so instead of offering a button that does nothing.
 struct ProvidersView: View {
     let apiClient: APIClient
 
-    @State private var response: ProviderAPI.ProviderListResponse? = nil
-    @State private var isLoading = true
-    @State private var error: String? = nil
+    @State private var model: ProvidersViewModel
+    @State private var authTarget: ProviderEntry? = nil
 
-    private var providerAPI: ProviderAPI { ProviderAPI(client: apiClient) }
+    init(apiClient: APIClient) {
+        self.apiClient = apiClient
+        _model = State(initialValue: ProvidersViewModel(apiClient: apiClient))
+    }
 
     var body: some View {
         ZStack {
             Theme.Colors.deepBlack.ignoresSafeArea()
 
-            if isLoading {
-                ProgressView("Loading providers…")
-                    .tint(Theme.Colors.cyberBlue)
-                    .foregroundStyle(Theme.Colors.silver)
-            } else if let err = error {
+            if model.isLoading && model.entries.isEmpty {
+                loadingSkeleton
+            } else if let err = model.loadError, model.entries.isEmpty {
                 EmptyStateView(
                     systemImage: "exclamationmark.triangle",
-                    title: "Error",
+                    title: "Could Not Load",
                     message: err,
-                    action: { Task { await loadProviders() } },
+                    action: { Task { await model.load() } },
                     actionLabel: "Retry"
                 )
-            } else if let resp = response {
-                providerList(resp)
+            } else if model.entries.isEmpty {
+                EmptyStateView(
+                    systemImage: "cpu",
+                    title: "No Providers",
+                    message: "No providers are configured on this server."
+                )
+            } else {
+                content
             }
         }
+        .overlay(alignment: .top) { bannerOverlay }
         .navigationTitle("Providers")
         .navigationBarTitleDisplayMode(.inline)
-        .task { await loadProviders() }
-        .refreshable { await loadProviders() }
+        .searchable(text: $model.searchText, prompt: "Search providers and models")
+        .sheet(item: $authTarget) { entry in
+            ProviderAuthSheet(entry: entry, model: model)
+        }
+        .task { await model.load() }
+        .refreshable { await model.load() }
     }
 
-    // MARK: - Provider List
+    // MARK: - Content
 
-    @ViewBuilder
-    private func providerList(_ resp: ProviderAPI.ProviderListResponse) -> some View {
-        let connected = Set(resp.connected)
-        let sorted = resp.all.sorted { $0.name < $1.name }
+    private var content: some View {
+        ScrollView {
+            VStack(spacing: Theme.Spacing.lg) {
+                if !model.connected.isEmpty {
+                    section(title: "Connected", entries: model.connected)
+                }
+                if !model.available.isEmpty {
+                    section(title: "Available", entries: model.available)
+                }
+                if model.connected.isEmpty && model.available.isEmpty {
+                    Text("Nothing matches \"\(model.searchText)\".")
+                        .font(Theme.Fonts.body)
+                        .foregroundStyle(Theme.Colors.silver)
+                        .padding(.top, Theme.Spacing.xl)
+                }
+            }
+            .padding(.top, Theme.Spacing.sm)
+            .padding(.bottom, Theme.Spacing.xl)
+        }
+    }
 
-        if sorted.isEmpty {
-            EmptyStateView(
-                systemImage: "cpu",
-                title: "No Providers",
-                message: "No providers are configured on this server."
-            )
-        } else {
-            ScrollView {
-                VStack(spacing: 0) {
-                    ForEach(Array(sorted.enumerated()), id: \.element.id) { index, provider in
-                        if index > 0 {
-                            Rectangle()
-                                .fill(Theme.Colors.graphite)
-                                .frame(height: 1)
-                                .padding(.leading, 52)
-                                .padding(.vertical, 2)
-                        }
-                        NavigationLink {
-                            ProviderDetailView(
-                                provider: provider,
-                                isConnected: connected.contains(provider.id)
-                            )
-                        } label: {
-                            ProviderRowView(
-                                provider: provider,
-                                isConnected: connected.contains(provider.id)
-                            )
+    private func section(title: String, entries: [ProviderEntry]) -> some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+            HStack {
+                Text(title.uppercased())
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Theme.Colors.smoke)
+                    .kerning(0.8)
+                Spacer()
+                Text("\(entries.count)")
+                    .font(Theme.Fonts.caption)
+                    .foregroundStyle(Theme.Colors.smoke)
+            }
+            .padding(.horizontal, Theme.Spacing.md + Theme.Spacing.xs)
+
+            VStack(spacing: 0) {
+                ForEach(Array(entries.enumerated()), id: \.element.id) { index, entry in
+                    if index > 0 {
+                        Rectangle()
+                            .fill(Theme.Colors.graphite)
+                            .frame(height: 1)
+                            .padding(.leading, 52)
+                            .padding(.vertical, 2)
+                    }
+                    NavigationLink {
+                        ProviderDetailView(
+                            providerID: entry.id,
+                            model: model,
+                            onConnect: { authTarget = entry }
+                        )
+                    } label: {
+                        ProviderRowView(
+                            entry: entry,
+                            isPending: model.pending.contains(entry.id)
+                        )
+                    }
+                    .contextMenu {
+                        if entry.isConnected {
+                            Button(role: .destructive) {
+                                Task { await model.disconnect(providerID: entry.id) }
+                            } label: {
+                                Label("Disconnect", systemImage: "key.slash")
+                            }
+                        } else {
+                            Button {
+                                authTarget = entry
+                            } label: {
+                                Label("Connect", systemImage: "key")
+                            }
                         }
                     }
                 }
-                .padding(Theme.Spacing.md)
-                .background(
-                    RoundedRectangle(cornerRadius: 14)
-                        .fill(Theme.Colors.carbon)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 14)
-                        .stroke(Theme.Colors.graphite, lineWidth: 1)
-                )
-                .padding(.horizontal, Theme.Spacing.md)
-                .padding(.top, Theme.Spacing.sm)
             }
+            .padding(Theme.Spacing.md)
+            .background(RoundedRectangle(cornerRadius: 14).fill(Theme.Colors.carbon))
+            .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.Colors.graphite, lineWidth: 1))
+            .padding(.horizontal, Theme.Spacing.md)
         }
     }
 
-    // MARK: - Load
-
-    private func loadProviders() async {
-        isLoading = true
-        error = nil
-        do {
-            response = try await providerAPI.list()
-        } catch {
-            self.error = error.localizedDescription
+    @ViewBuilder
+    private var bannerOverlay: some View {
+        if let banner = model.banner {
+            ErrorBanner(error: .validation(0, banner), onDismiss: { model.banner = nil })
+                // `ErrorBanner` animates in from `onAppear`, so a replacement message
+                // needs a fresh identity to animate rather than swap silently.
+                .id(banner)
+                .padding(.horizontal, Theme.Spacing.md)
+                .padding(.top, Theme.Spacing.sm)
+                .transition(.move(edge: .top).combined(with: .opacity))
         }
-        isLoading = false
+    }
+
+    // MARK: - Loading
+
+    private var loadingSkeleton: some View {
+        VStack(spacing: 0) {
+            ForEach(0..<6, id: \.self) { index in
+                if index > 0 {
+                    Rectangle().fill(Theme.Colors.graphite).frame(height: 1).padding(.leading, 52)
+                }
+                HStack(spacing: Theme.Spacing.md) {
+                    Circle().fill(Theme.Colors.fillMuted).frame(width: 40, height: 40)
+                    VStack(alignment: .leading, spacing: 6) {
+                        SkeletonBlock(width: 110, height: 13)
+                        SkeletonBlock(width: 160, height: 10)
+                    }
+                    Spacer()
+                    SkeletonBlock(width: 58, height: 20, cornerRadius: 10)
+                }
+                .padding(.vertical, 8)
+            }
+        }
+        .padding(Theme.Spacing.md)
+        .background(RoundedRectangle(cornerRadius: 14).fill(Theme.Colors.carbon))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.Colors.graphite, lineWidth: 1))
+        .padding(.horizontal, Theme.Spacing.md)
+        .frame(maxHeight: .infinity, alignment: .top)
+        .padding(.top, Theme.Spacing.sm)
     }
 }
 
 // MARK: - ProviderRowView
 
 private struct ProviderRowView: View {
-    let provider: Provider
-    let isConnected: Bool
-
-    private var modelCount: Int { provider.models.count }
-    private var statusText: String { isConnected ? "Connected" : "Not connected" }
+    let entry: ProviderEntry
+    let isPending: Bool
 
     var body: some View {
         HStack(spacing: Theme.Spacing.md) {
-            // Provider icon placeholder
             ZStack {
                 Circle()
-                    .fill(isConnected ? Theme.Colors.neonGreen.opacity(0.15) : Theme.Colors.smoke)
+                    .fill(entry.isConnected ? Theme.Colors.neonGreen.opacity(0.15) : Theme.Colors.fillMuted)
                     .frame(width: 40, height: 40)
-                Text(String(provider.name.prefix(2)).uppercased())
+                Text(String(entry.name.prefix(2)).uppercased())
                     .font(.system(size: 14, weight: .bold, design: .monospaced))
-                    .foregroundStyle(isConnected ? Theme.Colors.neonGreen : Theme.Colors.silver)
+                    .foregroundStyle(entry.isConnected ? Theme.Colors.neonGreen : Theme.Colors.silver)
             }
 
             VStack(alignment: .leading, spacing: 4) {
-                Text(provider.name)
+                Text(entry.name)
                     .font(Theme.Fonts.bodyBold)
                     .foregroundStyle(Theme.Colors.cloud)
-                HStack(spacing: Theme.Spacing.sm) {
-                    Text(modelCount == 1 ? "1 model" : "\(modelCount) models")
+                HStack(spacing: 6) {
+                    Text(entry.modelCount == 1 ? "1 model" : "\(entry.modelCount) models")
                         .font(Theme.Fonts.caption)
                         .foregroundStyle(Theme.Colors.silver)
                     Text("•")
@@ -142,14 +210,28 @@ private struct ProviderRowView: View {
                         .foregroundStyle(Theme.Colors.smoke)
                     Text(statusText)
                         .font(Theme.Fonts.caption)
-                        .foregroundStyle(isConnected ? Theme.Colors.neonGreen : Theme.Colors.silver)
+                        .foregroundStyle(statusColor)
                 }
             }
+
             Spacer()
-            StatusBadge(
-                status: isConnected ? .active : .idle
-            )
+
+            if isPending {
+                ProgressView().scaleEffect(0.7).tint(Theme.Colors.cyberBlue)
+            } else {
+                // Dot only: `ConnectionStatus` labels are session wording ("Done",
+                // "Idle") and read as nonsense next to a provider.
+                StatusBadge(status: entry.isConnected ? .active : .idle, showLabel: false)
+            }
         }
         .padding(.vertical, 6)
+    }
+
+    private var statusText: String {
+        entry.isConnected ? "Connected" : "Tap to connect"
+    }
+
+    private var statusColor: Color {
+        entry.isConnected ? Theme.Colors.neonGreen : Theme.Colors.cyberBlue
     }
 }

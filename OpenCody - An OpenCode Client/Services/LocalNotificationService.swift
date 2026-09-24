@@ -25,18 +25,20 @@ final class LocalNotificationService {
 
     // MARK: - Authorization
 
-    /// Request notification authorization on first launch.
-    /// Should be called once from the app entry point after the user has connected a server.
+    /// Set once the authorization request has been issued in this process, so repeated
+    /// foreground transitions don't ask (and log) again — the system prompt only ever
+    /// appears once per install anyway.
+    private var hasRequestedAuthorization = false
+
+    /// Request notification authorization. Safe to call on every foreground transition;
+    /// only the first call per app launch reaches the system.
     func requestAuthorization() {
+        guard !hasRequestedAuthorization else { return }
+        hasRequestedAuthorization = true
         Task {
             do {
-                let granted = try await UNUserNotificationCenter.current()
+                _ = try await UNUserNotificationCenter.current()
                     .requestAuthorization(options: [.alert, .sound, .badge])
-                if granted {
-                    print("[LocalNotificationService] Notification authorization granted.")
-                } else {
-                    print("[LocalNotificationService] Notification authorization denied.")
-                }
             } catch {
                 print("[LocalNotificationService] Authorization error: \(error.localizedDescription)")
             }

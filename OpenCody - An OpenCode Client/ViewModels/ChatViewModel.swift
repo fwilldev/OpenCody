@@ -117,6 +117,17 @@ final class ChatViewModel {
     var isBlockedByQuestion: Bool {
         !pendingQuestionRequestIDs.isEmpty
     }
+    /// True while the *first* message load for this session is in flight.
+    ///
+    /// Drives the chat's loading state. A refresh of an already-populated chat leaves it
+    /// `false`, so the list stays on screen instead of collapsing into a placeholder.
+    private(set) var isLoadingMessages: Bool = false
+
+    /// True until the session's agent/model selection has been resolved — first from the
+    /// message history, then from the server's defaults. Until that finishes the picker
+    /// can't honestly claim "Default Model", so it shows a loading state instead.
+    private(set) var isResolvingAgentModel: Bool = true
+
     var isLoadingMore: Bool = false
     var hasMoreMessages: Bool = true
     var visibleMessageCount: Int = 0
@@ -124,10 +135,39 @@ final class ChatViewModel {
     var selectedModelID: String? = nil
     var selectedProviderID: String? = nil
 
+    // MARK: - Input Draft
+
+    /// The chat input's text. Owned by the view model rather than `ChatInputView` so
+    /// that other surfaces — the `@` mention palette and the file explorer — can write
+    /// into the message the user is composing.
+    var draftText: String = ""
+
+    /// Attachments collected from file references in the draft (`@path` mentions and the
+    /// file explorer's reference action). Sent alongside the next prompt.
+    var draftFileAttachments: [PromptAttachment] = []
+
+    /// Paths already attached to the current draft, so referencing the same file twice
+    /// doesn't send its content twice.
+    @ObservationIgnored
+    private var referencedDraftPaths: Set<String> = []
+
     /// Monotonically increasing counter bumped on every content mutation
     /// (streaming deltas, new parts, message upserts).  The ChatView
     /// observes this to auto-scroll during streaming.
-    var scrollTrigger: UInt64 = 0
+    ///
+    /// Only mutated through `requestScroll()`, which coalesces the bursts of
+    /// streaming deltas into at most one bump per `scrollCoalesceInterval` —
+    /// otherwise SwiftUI logs "onChange action tried to update multiple times
+    /// per frame" for every token that arrives.
+    private(set) var scrollTrigger: UInt64 = 0
+
+    /// Whether a coalesced scroll bump is already in flight.
+    @ObservationIgnored
+    private var scrollBumpScheduled = false
+
+    /// Minimum spacing between two `scrollTrigger` bumps.
+    @ObservationIgnored
+    private let scrollCoalesceInterval: Duration = .milliseconds(100)
 
     /// Messages filtered for display: removes "step-only" messages (those containing
     /// exclusively step-start / step-finish parts with no real content).
@@ -196,11 +236,22 @@ final class ChatViewModel {
     func loadMessages() async {
         guard let client = connectionManager.activeAPIClient else {
             error = "No active server connection"
+            // Nothing left to resolve — don't leave the picker spinning forever.
+            isResolvingAgentModel = false
             return
         }
 
         error = nil
         let wasFullyLoaded = !hasMoreMessages && visibleMessageCount > 0
+        // Only the initial load replaces the list with a placeholder; a manual refresh
+        // keeps the existing messages visible.
+        if messages.isEmpty {
+            isLoadingMessages = true
+        }
+        defer {
+            isLoadingMessages = false
+            isResolvingAgentModel = false
+        }
 
         do {
             let api = MessageAPI(client: client, directory: session.directory)
@@ -254,6 +305,65 @@ final class ChatViewModel {
         visibleMessageCount = target
         hasMoreMessages = total > visibleMessageCount
         isLoadingMore = false
+    }
+
+    // MARK: - File References
+
+    /// Reference a project file from the message being composed: appends an `@path`
+    /// marker to the draft and attaches the file's current content.
+    ///
+    /// The marker appears immediately so the action feels instant; the content is read
+    /// in the background and simply left out when the read fails — the path in the text
+    /// is still enough for the agent to open the file itself.
+    func referenceFile(path: String) {
+        appendFileMarker(path)
+
+        guard !referencedDraftPaths.contains(path) else { return }
+        referencedDraftPaths.insert(path)
+
+        guard let client = connectionManager.activeAPIClient else { return }
+        Task {
+            guard let file = try? await FileAPI(client: client)
+                .content(path: path, directory: session.directory) else { return }
+            // Binary payloads arrive base64-encoded already; text needs encoding.
+            let encoded: String
+            if let encoding = file.encoding?.lowercased(), encoding.contains("base64") {
+                encoded = file.content
+            } else {
+                encoded = Data(file.content.utf8).base64EncodedString()
+            }
+            let mime = file.mimeType ?? "text/plain"
+            draftFileAttachments.append(
+                PromptAttachment(
+                    mime: mime,
+                    filename: (path as NSString).lastPathComponent,
+                    url: "data:\(mime);base64,\(encoded)"
+                )
+            )
+        }
+    }
+
+    /// Complete an in-progress `@query` mention in the draft with `path`.
+    func completeFileMention(with path: String) {
+        if let atRange = draftText.range(of: "@", options: .backwards) {
+            draftText = String(draftText[draftText.startIndex..<atRange.lowerBound])
+        }
+        referenceFile(path: path)
+    }
+
+    /// Reset the draft after sending (or discarding) a message.
+    func clearDraft() {
+        draftText = ""
+        draftFileAttachments.removeAll()
+        referencedDraftPaths.removeAll()
+    }
+
+    /// Append `@path ` to the draft, inserting a separating space when needed.
+    private func appendFileMarker(_ path: String) {
+        if !draftText.isEmpty, !draftText.hasSuffix(" "), !draftText.hasSuffix("\n") {
+            draftText += " "
+        }
+        draftText += "@\(path) "
     }
 
     /// Send a text prompt to the session. The actual response arrives via SSE events.
@@ -396,15 +506,11 @@ final class ChatViewModel {
             throw OpenCodeError.connectionFailed("No active server connection")
         }
 
-        #if DEBUG
-        print("[ChatViewModel] replyToQuestion requestID=\(request.id) session=\(request.sessionID) answers=\(answers)")
-        #endif
         let api = QuestionAPI(client: client)
         do {
-            try await api.reply(requestID: request.id, answers: answers)
-            #if DEBUG
-            print("[ChatViewModel] replyToQuestion SUCCESS requestID=\(request.id)")
-            #endif
+            try await api.reply(
+                requestID: request.id, answers: answers, directory: session.directory, sessionID: request.sessionID
+            )
         } catch {
             #if DEBUG
             print("[ChatViewModel] replyToQuestion FAILED requestID=\(request.id) error=\(error)")
@@ -422,15 +528,9 @@ final class ChatViewModel {
             throw OpenCodeError.connectionFailed("No active server connection")
         }
 
-        #if DEBUG
-        print("[ChatViewModel] rejectQuestion requestID=\(request.id) session=\(request.sessionID)")
-        #endif
         let api = QuestionAPI(client: client)
         do {
-            try await api.reject(requestID: request.id)
-            #if DEBUG
-            print("[ChatViewModel] rejectQuestion SUCCESS requestID=\(request.id)")
-            #endif
+            try await api.reject(requestID: request.id, directory: session.directory, sessionID: request.sessionID)
         } catch {
             #if DEBUG
             print("[ChatViewModel] rejectQuestion FAILED requestID=\(request.id) error=\(error)")
@@ -606,9 +706,6 @@ final class ChatViewModel {
             // display (without tool-part matching) works reliably.
             guard request.sessionID == session.id else { return }
             storeQuestionRequest(request)
-#if DEBUG
-            print("[ChatViewModel] question.asked accepted id=\(request.id) session=\(request.sessionID)")
-#endif
             // Ensure watchdog is active even if session status switched to idle
             // while waiting for the question reply.
             if pollTask == nil {
@@ -808,10 +905,6 @@ final class ChatViewModel {
         let sessionAPI = SessionAPI(client: client, directory: session.directory)
         if let statusMap = try? await sessionAPI.status() {
             let status = statusMap[session.id] ?? .idle
-#if DEBUG
-            let inMap = statusMap[session.id] != nil
-            print("[ChatViewModel] pollSessionStatus session=\(session.id) status=\(status) inMap=\(inMap) generating=\(isGenerating) blocked=\(isBlockedByQuestion)")
-#endif
             sessionStatus = status
             isLocallyGenerating = false  // Server is authoritative.
             // Don't cancel pollTask here — the loop condition handles termination.
@@ -928,13 +1021,6 @@ final class ChatViewModel {
                 questionRequestsByToolCall[key] = request
             }
         }
-#if DEBUG
-        if let tool = request.tool {
-            print("[ChatViewModel] Stored question request id=\(request.id) session=\(request.sessionID) tool=(msg=\(tool.messageID), call=\(tool.callID))")
-        } else {
-            print("[ChatViewModel] Stored question request id=\(request.id) session=\(request.sessionID) (no tool ref)")
-        }
-#endif
     }
 
     private func removeQuestionRequest(_ request: QuestionRequest) {
@@ -996,9 +1082,6 @@ final class ChatViewModel {
                     lastGlobalQuestionScanAt = now
                     if let global = try? await api.list(directory: nil), !global.isEmpty {
                         all = global
-#if DEBUG
-                        print("[ChatViewModel] refreshPendingQuestions used global fallback count=\(global.count)")
-#endif
                     }
                 }
             }
@@ -1030,9 +1113,6 @@ final class ChatViewModel {
                 byID[requestID] = local
             }
 
-#if DEBUG
-            print("[ChatViewModel] refreshPendingQuestions rest=\(pending.count) confirmed=\(confirmedQuestionIDs.count) final=\(byID.count)")
-#endif
             questionRequestsByID = byID
             pendingQuestionRequestIDs = Set(byID.keys)
             questionRequestsByToolCall = byID.values.reduce(into: [:]) { result, request in
@@ -1102,7 +1182,7 @@ final class ChatViewModel {
         }
         refreshFilteredMessages()
         updatePaginationState(wasFullyLoaded: wasFullyLoaded)
-        scrollTrigger &+= 1
+        requestScroll()
     }
 
     /// Add a local optimistic user message so the chat feels instant.
@@ -1158,7 +1238,7 @@ final class ChatViewModel {
         pendingLocalUserMessageIDs.insert(tempMessageID)
         refreshFilteredMessages()
         updatePaginationState(wasFullyLoaded: wasFullyLoaded)
-        scrollTrigger &+= 1
+        requestScroll()
     }
 
     /// Upsert a part into the matching message's parts array.
@@ -1176,6 +1256,22 @@ final class ChatViewModel {
         }
         refreshFilteredMessages()
         drainPendingDeltas(forPartID: part.id)
+    }
+
+    /// Ask the chat view to scroll to the bottom, coalescing rapid-fire callers.
+    ///
+    /// Streaming produces many mutations per frame; bumping `scrollTrigger` on each
+    /// one makes SwiftUI complain that the observing `onChange` ran several times in
+    /// a single frame. One bump per `scrollCoalesceInterval` keeps the scroll smooth
+    /// without the churn.
+    private func requestScroll() {
+        guard !scrollBumpScheduled else { return }
+        scrollBumpScheduled = true
+        Task { [scrollCoalesceInterval] in
+            try? await Task.sleep(for: scrollCoalesceInterval)
+            scrollBumpScheduled = false
+            scrollTrigger &+= 1
+        }
     }
 
     private func refreshFilteredMessages() {
@@ -1238,7 +1334,7 @@ final class ChatViewModel {
             )
             messages[msgIdx].parts[partIdx] = .text(updated)
             refreshFilteredMessages()
-            scrollTrigger &+= 1
+            requestScroll()
 
         case .reasoning(let rp):
             guard delta.field.isEmpty || delta.field == "text" || delta.field == "reasoning" || delta.field == "content" else { break }
@@ -1255,7 +1351,7 @@ final class ChatViewModel {
             )
             messages[msgIdx].parts[partIdx] = .reasoning(updated)
             refreshFilteredMessages()
-            scrollTrigger &+= 1
+            requestScroll()
 
         default:
             // Other part types don't have streaming text deltas
