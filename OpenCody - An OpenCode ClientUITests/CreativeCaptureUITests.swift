@@ -87,11 +87,11 @@ final class CreativeCaptureUITests: XCTestCase {
         while app.staticTexts[serverName].waitForExistence(timeout: 2) { deleteServer(named: serverName) }
         app.navigationBars["Servers"].buttons["Add"].firstMatch.tap()
 
-        type(serverName, into: app.textFields["My Server"])
-        type(host, into: app.textFields["192.168.1.100"])
-        type(port, into: app.textFields["Default"])
-        type("opencode", into: app.textFields["admin"])
-        type(password, into: app.secureTextFields["Password"])
+        type(serverName, into: app.textFields["server.name"])
+        type(host, into: app.textFields["server.host"])
+        type(port, into: app.textFields["server.port"])
+        type("opencode", into: app.textFields["server.username"])
+        type(password, into: app.secureTextFields["server.password"])
         let test = app.buttons["Test Connection"]
         if !test.isHittable { app.swipeUp() }
         test.tap()

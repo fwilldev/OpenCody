@@ -84,13 +84,13 @@ final class V2ServerUITests: XCTestCase {
         app.navigationBars["Servers"].buttons["Add"].firstMatch.tap()
 
         // Fill the form, choosing OpenCode 2.x.
-        type(serverName, into: app.textFields["My Server"])
-        type(host, into: app.textFields["192.168.1.100"])
-        type(port, into: app.textFields["Default"])
+        type(serverName, into: app.textFields["server.name"])
+        type(host, into: app.textFields["server.host"])
+        type(port, into: app.textFields["server.port"])
         app.buttons["OpenCode 2.x"].firstMatch.tap()
         XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS 'opencode'")).firstMatch.exists)
-        type("opencode", into: app.textFields["admin"])
-        type(password, into: app.secureTextFields["Password"])
+        type("opencode", into: app.textFields["server.username"])
+        type(password, into: app.secureTextFields["server.password"])
         screenshot("form")
 
         let test = app.buttons["Test Connection"]
@@ -111,10 +111,28 @@ final class V2ServerUITests: XCTestCase {
         XCTAssertTrue(projectCell.waitForExistence(timeout: 10), "project on dashboard")
         screenshot("dashboard")
         dismissPrompts()
+
+        // Rename the project from its context menu (issue #1), then reset the name.
+        projectCell.press(forDuration: 1.2)
+        let rename = app.buttons["Rename Project"].firstMatch
+        XCTAssertTrue(rename.waitForExistence(timeout: 5), "rename in context menu")
+        screenshot("project-context-menu")
+        rename.tap()
+        let nameField = app.alerts.textFields.firstMatch
+        XCTAssertTrue(nameField.waitForExistence(timeout: 5))
+        nameField.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 60) + "UITest Project")
+        app.alerts.buttons["Save"].tap()
+        let renamed = app.staticTexts["UITest Project"].firstMatch
+        XCTAssertTrue(renamed.waitForExistence(timeout: 10), "renamed project shown")
+        renamed.press(forDuration: 1.2)
+        let reset = app.buttons["Reset Name"].firstMatch
+        XCTAssertTrue(reset.waitForExistence(timeout: 5), "reset in context menu")
+        reset.tap()
+        XCTAssertTrue(projectCell.waitForExistence(timeout: 10), "folder name back")
         projectCell.tap()
 
         // New session → chat.
-        app.navigationBars.buttons["Add"].firstMatch.tap()
+        app.navigationBars.buttons["New Session"].firstMatch.tap()
         screenshot("create-session")
         let create = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] 'Create' OR label CONTAINS[c] 'Start'")).firstMatch
         XCTAssertTrue(create.waitForExistence(timeout: 5))
