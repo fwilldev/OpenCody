@@ -4,7 +4,6 @@
 //
 
 import SwiftUI
-import SwiftUI
 
 /// Root settings screen shown in the Settings tab.
 /// Sections: Servers, Providers, MCP Servers, Server Config, About.
@@ -370,35 +369,33 @@ private struct SettingsToggleRow: View {
     @Binding var isOn: Bool
 
     var body: some View {
-        HStack(spacing: Theme.Spacing.md) {
-            // Icon container
-            ZStack {
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(iconColor.opacity(0.12))
-                    .frame(width: 40, height: 40)
-                Image(systemName: icon)
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(iconColor)
-            }
+        // The row is the toggle's label, so VoiceOver reads the title with the switch.
+        Toggle(isOn: $isOn) {
+            HStack(spacing: Theme.Spacing.md) {
+                // Icon container
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(iconColor.opacity(0.12))
+                        .frame(width: 40, height: 40)
+                    Image(systemName: icon)
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(iconColor)
+                }
 
-            // Text content
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title)
-                    .font(Theme.Fonts.body)
-                    .foregroundStyle(Theme.Colors.cloud)
-                if let detail {
-                    Text(detail)
-                        .font(Theme.Fonts.caption)
-                        .foregroundStyle(Theme.Colors.silver)
+                // Text content
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title)
+                        .font(Theme.Fonts.body)
+                        .foregroundStyle(Theme.Colors.cloud)
+                    if let detail {
+                        Text(detail)
+                            .font(Theme.Fonts.caption)
+                            .foregroundStyle(Theme.Colors.silver)
+                    }
                 }
             }
-
-            Spacer()
-
-            Toggle("", isOn: $isOn)
-                .labelsHidden()
-                .tint(Theme.Colors.cyberBlue)
         }
+        .tint(Theme.Colors.cyberBlue)
         .padding(.vertical, 4)
         .contentShape(Rectangle())
     }

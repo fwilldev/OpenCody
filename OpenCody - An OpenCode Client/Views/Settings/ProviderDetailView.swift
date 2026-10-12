@@ -86,7 +86,7 @@ struct ProviderDetailView: View {
                 Spacer()
                 // Dot only — `ConnectionStatus`'s labels are session wording ("Done",
                 // "Idle") and mean nothing for a provider.
-                StatusBadge(status: entry.isConnected ? .active : .idle, showLabel: false)
+                StatusBadge(status: entry.isConnected ? .active : .idle, showLabel: false, label: entry.isConnected ? "Connected" : "Not connected")
             }
         }
         .padding(.horizontal, Theme.Spacing.md)

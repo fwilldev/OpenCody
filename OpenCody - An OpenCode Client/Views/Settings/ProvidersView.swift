@@ -221,7 +221,7 @@ private struct ProviderRowView: View {
             } else {
                 // Dot only: `ConnectionStatus` labels are session wording ("Done",
                 // "Idle") and read as nonsense next to a provider.
-                StatusBadge(status: entry.isConnected ? .active : .idle, showLabel: false)
+                StatusBadge(status: entry.isConnected ? .active : .idle, showLabel: false, label: entry.isConnected ? "Connected" : "Not connected")
             }
         }
         .padding(.vertical, 6)

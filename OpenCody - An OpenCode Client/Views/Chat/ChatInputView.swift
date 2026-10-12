@@ -130,7 +130,7 @@ struct ChatInputView: View {
                     referencedFilesRow
                 }
 
-                HStack(alignment: .bottom, spacing: Theme.Spacing.sm) {
+                HStack(alignment: .bottom, spacing: Theme.Spacing.xs) {
                     // Attachment toggle button
                     Button {
                         withAnimation(.easeInOut(duration: 0.2)) {
@@ -143,9 +143,12 @@ struct ChatInputView: View {
                                     ? Theme.Colors.cyberBlue
                                     : (attachmentManager.attachments.isEmpty ? Theme.Colors.silver : Theme.Colors.neonGreen)
                             )
-                            .font(.system(size: 18))
-                            .frame(width: 32, height: 32)
+                            .font(.title3)
+                            .frame(width: 44, height: 44)
+                            .contentShape(.rect)
                     }
+                    .accessibilityLabel("Attachments")
+                    .accessibilityValue(attachmentManager.attachments.isEmpty ? "" : "\(attachmentManager.attachments.count) attached")
 
                     // Shell mode toggle button
                     Button {
@@ -155,9 +158,12 @@ struct ChatInputView: View {
                     } label: {
                         Image(systemName: isShellMode ? "terminal.fill" : "terminal")
                             .foregroundStyle(isShellMode ? Theme.Colors.neonGreen : Theme.Colors.silver)
-                            .font(.system(size: 18))
-                            .frame(width: 32, height: 32)
+                            .font(.title3)
+                            .frame(width: 44, height: 44)
+                            .contentShape(.rect)
                     }
+                    .accessibilityLabel("Shell Mode")
+                    .accessibilityAddTraits(isShellMode ? .isSelected : [])
 
                     // Text input with placeholder
                     ZStack(alignment: .topLeading) {
@@ -200,8 +206,12 @@ struct ChatInputView: View {
                             Image(systemName: "stop.circle.fill")
                                 .foregroundStyle(Theme.Colors.hotPink)
                                 .font(.title3)
-                                .frame(width: 32, height: 32)
+                                .frame(width: 44, height: 44)
+                                .contentShape(.rect)
                         }
+                        .accessibilityLabel("Stop")
+                        .keyboardShortcut(".", modifiers: .command)
+                        .sensoryFeedback(.impact(weight: .medium), trigger: viewModel.isGenerating) { old, new in old && !new }
                         .transition(.scale.combined(with: .opacity))
                     }
 
@@ -212,16 +222,19 @@ struct ChatInputView: View {
                         Image(systemName: "arrow.up.circle.fill")
                             .foregroundStyle(canSend ? Theme.Colors.cyberBlue : Theme.Colors.smoke)
                             .font(.title3)
-                            .frame(width: 32, height: 32)
+                            .frame(width: 44, height: 44)
+                            .contentShape(.rect)
                             .scaleEffect(canSend ? 1.0 : 0.88)
                             .symbolEffect(.bounce, value: sendPulse)
                             .animation(.spring(response: 0.28, dampingFraction: 0.6), value: canSend)
                     }
                     .disabled(!canSend)
+                    .accessibilityLabel("Send")
+                    .keyboardShortcut(.return, modifiers: .command)
                     .sensoryFeedback(.impact(weight: .light), trigger: sendPulse)
                 }
-                .padding(.horizontal, Theme.Spacing.md)
-                .padding(.vertical, Theme.Spacing.sm)
+                .padding(.horizontal, Theme.Spacing.sm)
+                .padding(.vertical, Theme.Spacing.xs)
                 .background(Theme.Colors.carbon.opacity(0.96))
                 .animation(.easeInOut(duration: 0.15), value: viewModel.isGenerating)
             }

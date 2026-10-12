@@ -28,22 +28,20 @@ struct RefreshButton: View {
                 }
             }
         } label: {
-            Group {
-                switch state {
-                case .idle:
-                    Image(systemName: "arrow.clockwise")
-                        .foregroundStyle(Theme.Colors.cyberBlue)
-                case .refreshing:
-                    ProgressView()
-                        .tint(Theme.Colors.cyberBlue)
-                        .scaleEffect(0.8)
-                case .done:
-                    Image(systemName: "checkmark")
-                        .foregroundStyle(Theme.Colors.neonGreen)
-                }
+            switch state {
+            case .idle:
+                Label("Refresh", systemImage: "arrow.clockwise")
+            case .refreshing:
+                ProgressView()
+                    .controlSize(.small)
+                    .accessibilityLabel("Refreshing")
+            case .done:
+                Label("Refreshed", systemImage: "checkmark")
+                    .foregroundStyle(Theme.Colors.neonGreen)
             }
-            .animation(.easeInOut(duration: 0.2), value: state == .refreshing)
         }
+        .keyboardShortcut("r", modifiers: .command)
+        .sensoryFeedback(.success, trigger: state == .done) { _, done in done }
         .disabled(state != .idle)
     }
 }

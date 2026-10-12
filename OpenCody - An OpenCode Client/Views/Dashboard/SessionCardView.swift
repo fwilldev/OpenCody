@@ -56,12 +56,6 @@ struct SessionCardView: View {
 
                 Spacer()
 
-                if isSessionRunning {
-                    ProgressView()
-                        .controlSize(.mini)
-                        .tint(Theme.Colors.cyberBlue)
-                }
-
                 StatusBadge(
                     status: connectionStatusFromSession,
                     showLabel: true
@@ -143,20 +137,8 @@ struct SessionCardView: View {
         switch status {
         case .idle:
             return .idle
-        case .busy:
-            return .active
-        case .retry:
-            return .connecting
-        }
-    }
-
-    private var isSessionRunning: Bool {
-        guard let status else { return false }
-        switch status {
-        case .idle:
-            return false
         case .busy, .retry:
-            return true
+            return .connecting
         }
     }
 

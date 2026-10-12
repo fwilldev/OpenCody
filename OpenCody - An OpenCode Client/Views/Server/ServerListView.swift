@@ -159,7 +159,8 @@ struct ServerListView: View {
                 // Status badge
                 StatusBadge(
                     status: connectionStatus(for: server),
-                    showLabel: false
+                    showLabel: false,
+                    label: connectionStatus(for: server) == .active ? "Connected" : connectionStatus(for: server).label
                 )
 
                 // Chevron

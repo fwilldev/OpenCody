@@ -104,6 +104,7 @@ struct MessageBubbleView: View {
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(roleColor)
                 }
+                .accessibilityHidden(true)
                 Text(roleLabel)
                     .font(.system(.caption, design: .monospaced, weight: .bold))
                     .foregroundStyle(roleColor)

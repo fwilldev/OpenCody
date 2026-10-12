@@ -4,6 +4,7 @@ import SwiftUI
 /// Mirrors the assistant bubble style: avatar plus three pulsing dots.
 struct TypingIndicatorView: View {
     @State private var isAnimating = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         HStack(alignment: .center, spacing: Theme.Spacing.sm) {
@@ -23,7 +24,7 @@ struct TypingIndicatorView: View {
                         .fill(Theme.Colors.neonGreen)
                         .frame(width: 6, height: 6)
                         .opacity(isAnimating ? 1 : 0.2)
-                        .scaleEffect(isAnimating ? 1 : 0.7)
+                        .scaleEffect(isAnimating || reduceMotion ? 1 : 0.7)
                         .animation(
                             .easeInOut(duration: 0.45)
                                 .repeatForever(autoreverses: true)
@@ -44,5 +45,7 @@ struct TypingIndicatorView: View {
             )
         }
         .onAppear { isAnimating = true }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("OpenCode is responding")
     }
 }

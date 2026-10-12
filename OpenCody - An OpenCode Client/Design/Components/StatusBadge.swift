@@ -29,25 +29,32 @@ enum ConnectionStatus: Sendable {
 struct StatusBadge: View {
     let status: ConnectionStatus
     var showLabel: Bool = true
+    /// Wording for this context (e.g. "Connected"); defaults to the status label.
+    var label: String? = nil
     @State private var pulse = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var animates: Bool { status.isAnimating && !reduceMotion }
 
     var body: some View {
         HStack(spacing: Theme.Spacing.xs) {
             Circle()
                 .fill(status.color)
                 .frame(width: 6, height: 6)
-                .shadow(color: status.color.opacity(0.8), radius: pulse && status.isAnimating ? 4 : 2)
-                .scaleEffect(pulse && status.isAnimating ? 1.3 : 1.0)
+                .shadow(color: status.color.opacity(0.8), radius: pulse && animates ? 4 : 2)
+                .scaleEffect(pulse && animates ? 1.3 : 1.0)
                 .animation(
-                    status.isAnimating ? .easeInOut(duration: 0.8).repeatForever(autoreverses: true) : .default,
+                    animates ? .easeInOut(duration: 0.8).repeatForever(autoreverses: true) : .default,
                     value: pulse
                 )
                 .onAppear { pulse = true }
             if showLabel {
-                Text(status.label)
+                Text(label ?? status.label)
                     .font(Theme.Fonts.codeCaption)
                     .foregroundStyle(status.color)
             }
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(label ?? status.label)
     }
 }
