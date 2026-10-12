@@ -417,42 +417,23 @@ private struct iPadChatUtilitiesContainer: View {
     }
 
     var body: some View {
-        ZStack(alignment: .trailing) {
-            ChatView(
-                session: session,
-                connectionManager: connectionManager,
-                viewModel: viewModel,
-                utilitiesState: iPadUtilitiesState(isOpen: $isUtilitiesOpen, selectedTab: $selectedTab)
-            )
-
-            if isUtilitiesOpen {
-                utilitiesOverlay
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var utilitiesOverlay: some View {
-        if let client = connectionManager.activeAPIClient {
-            HStack(spacing: 0) {
-                Color.black.opacity(0.25)
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            isUtilitiesOpen = false
-                        }
-                    }
-
+        // A native inspector resizes the chat beside it instead of covering the input.
+        ChatView(
+            session: session,
+            connectionManager: connectionManager,
+            viewModel: viewModel,
+            utilitiesState: iPadUtilitiesState(isOpen: $isUtilitiesOpen, selectedTab: $selectedTab)
+        )
+        .inspector(isPresented: $isUtilitiesOpen) {
+            if let client = connectionManager.activeAPIClient {
                 iPadUtilitiesPanel(
                     session: session,
                     apiClient: client,
                     viewModel: viewModel,
                     selectedTab: $selectedTab
                 )
-                .frame(width: 360)
-                .transition(.move(edge: .trailing))
+                .inspectorColumnWidth(min: 300, ideal: 380, max: 520)
             }
-            .ignoresSafeArea(.container, edges: [.bottom, .trailing])
         }
     }
 }

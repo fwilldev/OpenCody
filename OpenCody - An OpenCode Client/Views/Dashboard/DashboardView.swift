@@ -92,21 +92,14 @@ struct DashboardView: View {
                 )
             }
 
-            ToolbarItem(placement: .primaryAction) {
+            ToolbarItemGroup(placement: .primaryAction) {
                 if connectionManager.activeAPIClient != nil {
-                    HStack(spacing: Theme.Spacing.sm) {
-                        RefreshButton {
-                            await viewModel.loadSessions()
-                            await viewModel.loadStatuses()
-                        }
+                    RefreshButton { await refresh() }
 
-                        Button {
-                            showCreateSheet = true
-                        } label: {
-                            Image(systemName: "plus")
-                                .foregroundStyle(Theme.Colors.cyberBlue)
-                        }
+                    Button("New Session", systemImage: "plus") {
+                        showCreateSheet = true
                     }
+                    .keyboardShortcut("n", modifiers: .command)
                 }
             }
         }
@@ -238,6 +231,8 @@ struct DashboardView: View {
                     SkeletonCard()
                 }
             }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Loading projects")
             .padding(.horizontal, Theme.Spacing.md)
             .padding(.vertical, Theme.Spacing.sm)
         }
@@ -304,6 +299,7 @@ struct DashboardView: View {
                         .opacity(viewModel.isProjectClosed(directory: group.directory) ? 0.5 : 1.0)
                     }
                     .buttonStyle(.plain)
+                    .hoverEffect(.highlight)
                     .contextMenu {
                         ProjectContextMenu(group: group, viewModel: viewModel) {
                             renamingProject = group
@@ -318,16 +314,13 @@ struct DashboardView: View {
                             viewModel.showClosedProjects.toggle()
                         }
                     } label: {
-                        HStack(spacing: Theme.Spacing.sm) {
-                            Image(systemName: viewModel.showClosedProjects ? "eye.slash" : "eye")
-                                .font(.system(size: 12, weight: .medium))
-                                .foregroundStyle(Theme.Colors.smoke)
-                            Text(viewModel.showClosedProjects ? "Hide Closed Projects" : "Show Closed Projects")
-                                .font(Theme.Fonts.caption)
-                                .foregroundStyle(Theme.Colors.smoke)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, Theme.Spacing.sm)
+                        Label(
+                            viewModel.showClosedProjects ? "Hide Closed Projects" : "Show Closed Projects",
+                            systemImage: viewModel.showClosedProjects ? "eye.slash" : "eye"
+                        )
+                        .font(Theme.Fonts.caption)
+                        .foregroundStyle(Theme.Colors.silver)
+                        .frame(maxWidth: .infinity, minHeight: 44)
                     }
                     .buttonStyle(.plain)
                 }
@@ -336,25 +329,29 @@ struct DashboardView: View {
                 Button {
                     showTipJar = true
                 } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "heart")
-                            .font(.system(size: 11))
-                        Text("Support the Developer")
-                            .font(.footnote)
-                    }
-                    .foregroundStyle(Theme.Colors.smoke)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, Theme.Spacing.md)
+                    Label("Support the Developer", systemImage: "heart")
+                        .font(.footnote)
+                        .foregroundStyle(Theme.Colors.silver)
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .padding(.vertical, Theme.Spacing.xs)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Support the developer, opens tip options")
             }
             .padding(.horizontal, Theme.Spacing.md)
             .padding(.vertical, Theme.Spacing.sm)
+            .animation(.default, value: viewModel.projectGroups.map(\.id))
         }
+        .refreshable { await refresh() }
     }
 
     // MARK: - Helpers
+
+    private func refresh() async {
+        await viewModel.loadSessions()
+        await viewModel.loadStatuses()
+        await viewModel.loadProjects()
+    }
 
     /// Check if a session status is busy (SessionStatus doesn't conform to Equatable).
     private func isBusy(_ status: SessionStatus?) -> Bool {
@@ -368,6 +365,11 @@ struct DashboardView: View {
 
 struct SkeletonCard: View {
     var body: some View {
+        card
+            .accessibilityHidden(true)
+    }
+
+    private var card: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
             HStack {
                 SkeletonBlock(width: 160, height: 14)

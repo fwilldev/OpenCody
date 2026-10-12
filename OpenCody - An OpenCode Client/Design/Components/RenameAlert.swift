@@ -17,6 +17,7 @@ private struct RenameAlert<Item: Identifiable>: ViewModifier {
             .alert(title, isPresented: isPresented, presenting: item) { item in
                 TextField("Name", text: $text)
                     .textInputAutocapitalization(.sentences)
+                    .autocorrectionDisabled()
                     .submitLabel(.done)
                 Button("Cancel", role: .cancel) {}
                 Button("Save") { onSave(item, text.trimmingCharacters(in: .whitespacesAndNewlines)) }

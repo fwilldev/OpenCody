@@ -83,34 +83,27 @@ struct ChatView: View {
         .toolbar {
             if let utilitiesState {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button {
+                    Button("Utilities", systemImage: "sidebar.right") {
                         withAnimation(.easeInOut(duration: 0.2)) {
-                            utilitiesState.isOpen.wrappedValue = true
+                            utilitiesState.isOpen.wrappedValue.toggle()
                         }
-                    } label: {
-                        Image(systemName: "sidebar.right")
-                            .foregroundStyle(Theme.Colors.silver)
                     }
+                    .keyboardShortcut("i", modifiers: [.command, .option])
                 }
             }
 
-            ToolbarItem(placement: .primaryAction) {
-                HStack(spacing: Theme.Spacing.sm) {
-                    RefreshButton {
-                        await viewModel.loadMessages()
-                    }
+            ToolbarItemGroup(placement: .primaryAction) {
+                RefreshButton {
+                    await viewModel.loadMessages()
+                }
 
-                    if let client = connectionManager.activeAPIClient {
-                        SessionActionsMenu(
-                            session: viewModel.session,
-                            viewModel: viewModel,
-                            apiClient: client,
-                            showsUtilityItems: utilitiesState == nil
-                        )
-                    } else {
-                        Image(systemName: "ellipsis")
-                            .foregroundStyle(Theme.Colors.silver)
-                    }
+                if let client = connectionManager.activeAPIClient {
+                    SessionActionsMenu(
+                        session: viewModel.session,
+                        viewModel: viewModel,
+                        apiClient: client,
+                        showsUtilityItems: utilitiesState == nil
+                    )
                 }
             }
         }

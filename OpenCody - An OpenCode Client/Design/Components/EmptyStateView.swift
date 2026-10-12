@@ -1,5 +1,7 @@
 import SwiftUI
 
+/// Empty, offline and error states: the system `ContentUnavailableView` with an
+/// optional action button.
 struct EmptyStateView: View {
     let systemImage: String
     let title: String
@@ -8,29 +10,18 @@ struct EmptyStateView: View {
     var actionLabel: String? = nil
 
     var body: some View {
-        VStack(spacing: Theme.Spacing.lg) {
-            Image(systemName: systemImage)
-                .font(.system(size: 52, weight: .thin))
+        ContentUnavailableView {
+            Label(title, systemImage: systemImage)
+                .foregroundStyle(Theme.Colors.cloud)
+        } description: {
+            Text(message)
                 .foregroundStyle(Theme.Colors.silver)
-                .padding(.bottom, Theme.Spacing.sm)
-            VStack(spacing: Theme.Spacing.sm) {
-                Text(title)
-                    .font(Theme.Fonts.title2)
-                    .foregroundStyle(Theme.Colors.cloud)
-                    .multilineTextAlignment(.center)
-                Text(message)
-                    .font(Theme.Fonts.body)
-                    .foregroundStyle(Theme.Colors.silver)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, Theme.Spacing.xl)
-            }
-            if let action, let label = actionLabel {
-                Button(label, action: action)
+        } actions: {
+            if let action, let actionLabel {
+                Button(actionLabel, action: action)
                     .primaryButton()
-                    .padding(.top, Theme.Spacing.sm)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(Theme.Spacing.xl)
     }
 }

@@ -128,7 +128,7 @@ final class CreativeCaptureUITests: XCTestCase {
         sleep(2)
         screenshot("chat-top")
         // The actions menu label is the short session id above an ellipsis.
-        let menu = app.navigationBars.buttons.matching(NSPredicate(format: "label BEGINSWITH 'ses_' OR label CONTAINS[c] 'More'")).firstMatch
+        let menu = app.navigationBars.buttons.matching(NSPredicate(format: "label BEGINSWITH 'ses_' OR label CONTAINS[c] 'More' OR label == 'Session Actions'")).firstMatch
         if menu.waitForExistence(timeout: 3) {
             menu.tap()
             let diff = app.buttons["View Diff"].firstMatch

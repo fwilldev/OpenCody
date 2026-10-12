@@ -38,7 +38,8 @@ extension View {
             "Rename Project",
             item: group,
             currentName: { $0.name },
-            message: { $0.directory },
+            // The full path can make the alert scroll and swallow taps; the folder name is enough.
+            message: { "Shown instead of “\(($0.directory as NSString).lastPathComponent)”. Leave it as is to keep the current name." },
             onSave: { group, name in
                 Task {
                     do {

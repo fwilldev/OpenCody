@@ -171,7 +171,7 @@ struct TipJarView: View {
             Button("Retry") {
                 Task { await tipJarManager.loadProducts() }
             }
-            .buttonStyle(PrimaryGlassButtonStyle())
+            .primaryButton()
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, Theme.Spacing.xxl)

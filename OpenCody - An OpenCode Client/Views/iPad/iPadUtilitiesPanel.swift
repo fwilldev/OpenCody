@@ -46,12 +46,6 @@ struct iPadUtilitiesPanel: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.Colors.carbon)
-        .overlay(
-            Rectangle()
-                .fill(Theme.Colors.hairline)
-                .frame(width: 1),
-            alignment: .leading
-        )
     }
 
     private var header: some View {

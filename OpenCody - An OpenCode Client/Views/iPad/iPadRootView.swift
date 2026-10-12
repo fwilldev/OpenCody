@@ -15,7 +15,7 @@ struct iPadRootView: View {
     @State private var selectedProjectKey: String? = nil
     @State private var showCreateSheet: Bool = false
     @State private var showAddServer: Bool = false
-    @State private var columnVisibility: NavigationSplitViewVisibility = .automatic
+    @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var detailPath = NavigationPath()
     @State private var showSettings: Bool = false
 
@@ -111,31 +111,26 @@ struct iPadRootView: View {
 
     // MARK: - Detail Content
 
+    @ViewBuilder
     private var detailContent: some View {
         if showSettings {
-            return AnyView(
-                NavigationStack {
-                    SettingsView(connectionManager: connectionManager)
-                        .environmentObject(serverStore)
-                }
-            )
+            NavigationStack {
+                SettingsView(connectionManager: connectionManager)
+                    .environmentObject(serverStore)
+            }
+        } else if let directory = selectedProjectKey {
+            NavigationStack(path: $detailPath) {
+                ProjectSessionsView(
+                    projectName: dashboardViewModel.projectName(for: directory),
+                    projectPath: directory,
+                    initialStatusMap: dashboardViewModel.statusMap,
+                    viewModel: dashboardViewModel,
+                    connectionManager: connectionManager
+                )
+            }
+        } else {
+            settingsOrEmptyContent
         }
-
-        if let directory = selectedProjectKey {
-            return AnyView(
-                NavigationStack(path: $detailPath) {
-                    ProjectSessionsView(
-                        projectName: dashboardViewModel.projectName(for: directory),
-                        projectPath: directory,
-                        initialStatusMap: dashboardViewModel.statusMap,
-                        viewModel: dashboardViewModel,
-                        connectionManager: connectionManager
-                    )
-                }
-            )
-        }
-
-        return AnyView(settingsOrEmptyContent)
     }
 
     // MARK: - Empty / Settings State
@@ -164,21 +159,16 @@ struct iPadRootView: View {
                     actionLabel: "Add Server"
                 )
             } else if connectionManager.activeAPIClient == nil {
-                VStack(spacing: Theme.Spacing.md) {
+                ContentUnavailableView {
                     ProgressView("Connecting…")
-                        .tint(Theme.Colors.cyberBlue)
-                    Button("Manage Servers") {
-                        openServers()
-                    }
-                    .font(Theme.Fonts.captionBold)
-                    .foregroundStyle(Theme.Colors.cyberBlue)
+                } actions: {
+                    Button("Manage Servers", action: openServers)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 EmptyStateView(
                     systemImage: "bubble.left.and.bubble.right",
-                    title: "No Session Selected",
-                    message: "Select a session from the sidebar or create a new one.",
+                    title: "No Project Selected",
+                    message: "Pick a project in the sidebar, or start a new session.",
                     action: { showCreateSheet = true },
                     actionLabel: "New Session"
                 )

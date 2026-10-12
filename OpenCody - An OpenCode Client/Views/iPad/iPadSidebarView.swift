@@ -64,93 +64,58 @@ struct iPadSidebarView: View {
             } header: {
                 sectionHeader("Server")
             }
-            .listRowBackground(glassRowBackground)
 
             // MARK: Projects
             Section {
                 if isActiveServerOffline {
-                    VStack(spacing: Theme.Spacing.sm) {
-                        Image(systemName: "wifi.slash")
-                            .font(.system(size: 28))
-                            .foregroundStyle(Theme.Colors.hotPink)
-                        Text("Server Offline")
-                            .font(Theme.Fonts.bodyBold)
-                            .foregroundStyle(Theme.Colors.cloud)
-                        Text("Could not reach server.")
-                            .font(Theme.Fonts.caption)
-                            .foregroundStyle(Theme.Colors.silver)
+                    ContentUnavailableView {
+                        Label("Server Offline", systemImage: "wifi.slash")
+                    } description: {
+                        Text("Could not reach the server.")
+                    } actions: {
                         Button("Reconnect") {
                             guard let id = connectionManager.activeServerID else { return }
-                            Task {
-                                await connectionManager.retryConnection(for: id)
-                            }
+                            Task { await connectionManager.retryConnection(for: id) }
                         }
-                        .font(Theme.Fonts.captionBold)
-                        .foregroundStyle(Theme.Colors.cyberBlue)
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, Theme.Spacing.lg)
                 } else if connectionManager.activeAPIClient == nil && !serverStore.servers.isEmpty {
-                    VStack(spacing: Theme.Spacing.sm) {
-                        ProgressView()
-                            .tint(Theme.Colors.cyberBlue)
-                        Text("Connecting…")
-                            .font(Theme.Fonts.caption)
-                            .foregroundStyle(Theme.Colors.silver)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, Theme.Spacing.lg)
+                    ProgressView("Connecting…")
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, Theme.Spacing.lg)
                 } else if connectionManager.activeAPIClient == nil {
-                    VStack(spacing: Theme.Spacing.sm) {
-                        Image(systemName: "server.rack")
-                            .font(.system(size: 28))
-                            .foregroundStyle(Theme.Colors.silver)
-                        Text("No Server Connected")
-                            .font(Theme.Fonts.bodyBold)
-                            .foregroundStyle(Theme.Colors.cloud)
+                    ContentUnavailableView {
+                        Label("No Server Connected", systemImage: "server.rack")
+                    } description: {
                         Text("Add a server to get started.")
-                            .font(Theme.Fonts.caption)
-                            .foregroundStyle(Theme.Colors.silver)
-                        Button("Manage Servers") {
-                            openServers()
-                        }
-                        .font(Theme.Fonts.captionBold)
-                        .foregroundStyle(Theme.Colors.cyberBlue)
+                    } actions: {
+                        Button("Manage Servers", action: openServers)
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, Theme.Spacing.lg)
                 } else if viewModel.activeSessions.isEmpty && !viewModel.isLoading {
                     Text("No sessions")
                         .font(Theme.Fonts.caption)
                         .foregroundStyle(Theme.Colors.silver)
                 } else {
                     ForEach(viewModel.projectGroups) { project in
-                        Button {
-                            selectedProjectKey = project.directory
-                        } label: {
-                            Label {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(project.name)
-                                        .font(Theme.Fonts.bodyBold)
-                                        .foregroundStyle(Theme.Colors.cloud)
+                        Label {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(project.name)
+                                    .font(Theme.Fonts.bodyBold)
+                                    .foregroundStyle(Theme.Colors.cloud)
+                                    .lineLimit(1)
+                                if project.hasCustomName {
+                                    Text(project.directory)
+                                        .font(Theme.Fonts.codeCaption)
+                                        .foregroundStyle(Theme.Colors.silver)
                                         .lineLimit(1)
-                                    if project.hasCustomName {
-                                        Text(project.directory)
-                                            .font(Theme.Fonts.codeCaption)
-                                            .foregroundStyle(Theme.Colors.silver)
-                                            .lineLimit(1)
-                                            .truncationMode(.middle)
-                                    }
+                                        .truncationMode(.middle)
                                 }
-                            } icon: {
-                                Image(systemName: "folder.fill")
-                                    .foregroundStyle(Theme.Colors.cyberBlue)
                             }
-                            .opacity(viewModel.isProjectClosed(directory: project.directory) ? 0.5 : 1.0)
+                        } icon: {
+                            Image(systemName: "folder.fill")
+                                .foregroundStyle(Theme.Colors.cyberBlue)
                         }
-                        .buttonStyle(.plain)
+                        .opacity(viewModel.isProjectClosed(directory: project.directory) ? 0.5 : 1.0)
                         .tag(project.directory)
-                        .listRowBackground(glassRowBackground)
                         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                             if viewModel.isProjectClosed(directory: project.directory) {
                                 Button("Open", systemImage: "eye") {
@@ -178,14 +143,12 @@ struct iPadSidebarView: View {
                                 viewModel.showClosedProjects.toggle()
                             }
                         } label: {
-                            HStack(spacing: Theme.Spacing.sm) {
-                                Image(systemName: viewModel.showClosedProjects ? "eye.slash" : "eye")
-                                    .font(.system(size: 11, weight: .medium))
-                                    .foregroundStyle(Theme.Colors.smoke)
-                                Text(viewModel.showClosedProjects ? "Hide Closed" : "Show Closed")
-                                    .font(Theme.Fonts.caption)
-                                    .foregroundStyle(Theme.Colors.smoke)
-                            }
+                            Label(
+                                viewModel.showClosedProjects ? "Hide Closed" : "Show Closed",
+                                systemImage: viewModel.showClosedProjects ? "eye.slash" : "eye"
+                            )
+                            .font(Theme.Fonts.caption)
+                            .foregroundStyle(Theme.Colors.silver)
                         }
                         .buttonStyle(.plain)
                         .listRowBackground(Color.clear)
@@ -195,14 +158,9 @@ struct iPadSidebarView: View {
                     Button {
                         showTipJar = true
                     } label: {
-                        HStack(spacing: Theme.Spacing.sm) {
-                            Image(systemName: "heart")
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundStyle(Theme.Colors.smoke)
-                            Text("Support the Developer")
-                                .font(Theme.Fonts.caption)
-                                .foregroundStyle(Theme.Colors.smoke)
-                        }
+                        Label("Support the Developer", systemImage: "heart")
+                            .font(Theme.Fonts.caption)
+                            .foregroundStyle(Theme.Colors.silver)
                     }
                     .buttonStyle(.plain)
                     .listRowBackground(Color.clear)
@@ -210,7 +168,7 @@ struct iPadSidebarView: View {
                 }
             } header: {
                 HStack {
-                    sectionHeader("Sessions")
+                    sectionHeader("Projects")
                     Spacer()
                     if viewModel.isLoading {
                         ProgressView()
@@ -219,7 +177,6 @@ struct iPadSidebarView: View {
                     }
                 }
             }
-            .listRowBackground(glassRowBackground)
 
             // MARK: Settings
             Section {
@@ -232,26 +189,25 @@ struct iPadSidebarView: View {
             } header: {
                 sectionHeader("Settings")
             }
-            .listRowBackground(glassRowBackground)
         }
-        .scrollContentBackground(.hidden)
-        .background(Theme.Colors.carbon)
+        .refreshable {
+            await viewModel.loadSessions()
+            await viewModel.loadStatuses()
+            await viewModel.loadProjects()
+        }
         .toolbar {
-            ToolbarItem(placement: .primaryAction) {
+            ToolbarItemGroup(placement: .primaryAction) {
                 if connectionManager.activeAPIClient != nil {
-                    HStack(spacing: Theme.Spacing.sm) {
-                        RefreshButton {
-                            await viewModel.loadSessions()
-                            await viewModel.loadStatuses()
-                        }
-
-                        Button {
-                            showCreateSheet = true
-                        } label: {
-                            Image(systemName: "plus")
-                                .foregroundStyle(Theme.Colors.cyberBlue)
-                        }
+                    RefreshButton {
+                        await viewModel.loadSessions()
+                        await viewModel.loadStatuses()
+                        await viewModel.loadProjects()
                     }
+
+                    Button("New Session", systemImage: "plus") {
+                        showCreateSheet = true
+                    }
+                    .keyboardShortcut("n", modifiers: .command)
                 }
             }
         }
@@ -348,15 +304,6 @@ struct iPadSidebarView: View {
             .font(Theme.Fonts.captionBold)
             .foregroundStyle(Theme.Colors.silver)
             .textCase(nil)
-    }
-
-    private var glassRowBackground: some View {
-        RoundedRectangle(cornerRadius: 12)
-            .fill(Theme.Colors.glassFill)
-            .overlay(
-                RoundedRectangle(cornerRadius: 12)
-                    .stroke(Theme.Colors.border, lineWidth: 1)
-            )
     }
 
     private var activeServerName: String {

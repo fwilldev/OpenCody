@@ -93,19 +93,13 @@ struct ServerSwitcherView: View {
                 .frame(maxWidth: 140, alignment: .leading)
 
             Image(systemName: "chevron.down")
-                .font(.system(size: 9, weight: .semibold))
+                .font(.caption2.weight(.semibold))
                 .foregroundStyle(Theme.Colors.silver)
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 5)
-        .background(
-            RoundedRectangle(cornerRadius: Theme.Radius.button)
-                .fill(.ultraThinMaterial)
-                .overlay(
-                    RoundedRectangle(cornerRadius: Theme.Radius.button)
-                        .stroke(Theme.Colors.border, lineWidth: 1)
-                )
-        )
+        .padding(.horizontal, 4)
+        // The toolbar item is already glass; no second layer.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Server: \(activeServerName)")
     }
 
 }

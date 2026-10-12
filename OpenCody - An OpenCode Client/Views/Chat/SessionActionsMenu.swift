@@ -23,18 +23,18 @@ struct SessionActionsMenu: View {
     @State private var showFileExplorer = false
     @State private var showContextUsage = false
     @State private var renamingSession: Session?
+    @State private var confirmRevert = false
 
     var body: some View {
         Menu {
-            Button("Rename Session", systemImage: "pencil") {
-                renamingSession = session
+            Section(session.id) {
+                Button("Copy Session ID", systemImage: "doc.on.doc") {
+                    UIPasteboard.general.string = session.id
+                }
             }
 
-            // Copy Session ID
-            Button {
-                UIPasteboard.general.string = session.id
-            } label: {
-                Label("Copy Session ID", systemImage: "doc.on.doc")
+            Button("Rename Session", systemImage: "pencil") {
+                renamingSession = session
             }
 
             // Context Usage
@@ -87,7 +87,7 @@ struct SessionActionsMenu: View {
 
             // Revert
             Button {
-                Task { await revertSession() }
+                confirmRevert = true
             } label: {
                 Label("Revert", systemImage: "arrow.uturn.backward")
             }
@@ -122,13 +122,12 @@ struct SessionActionsMenu: View {
                 }
             }
         } label: {
-            VStack(spacing: 2) {
-                Text(session.id.prefix(8))
-                    .font(.system(size: 9, weight: .medium, design: .monospaced))
-                    .foregroundStyle(Theme.Colors.smoke)
-                Image(systemName: "ellipsis")
-                    .foregroundStyle(Theme.Colors.silver)
-            }
+            Label("Session Actions", systemImage: "ellipsis")
+        }
+        .confirmationDialog("Revert the last message?", isPresented: $confirmRevert, titleVisibility: .visible) {
+            Button("Revert", role: .destructive) { Task { await revertSession() } }
+        } message: {
+            Text("The last message is hidden and its file changes are undone. You can bring it back with Unrevert.")
         }
         .renameAlert(
             "Rename Session",
