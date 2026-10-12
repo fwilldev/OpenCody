@@ -123,10 +123,8 @@ struct DashboardView: View {
             ChatView(session: session, connectionManager: connectionManager)
         }
         .sheet(isPresented: $showAddServer) {
-            NavigationStack {
-                AddServerView(connectionManager: connectionManager)
-                    .environmentObject(serverStore)
-            }
+            ServerFormView(server: nil, connectionManager: connectionManager)
+                .environmentObject(serverStore)
         }
         .task(id: connectionManager.activeServerID) {
             viewModel.loadClosedProjects()
@@ -368,7 +366,7 @@ struct DashboardView: View {
 
 // MARK: - SkeletonCard
 
-private struct SkeletonCard: View {
+struct SkeletonCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
             HStack {

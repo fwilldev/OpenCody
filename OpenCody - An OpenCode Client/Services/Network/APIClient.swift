@@ -104,14 +104,52 @@ nonisolated final class APIClient: Sendable {
 
     // MARK: - Health Check
 
-    /// Quick health check — returns `true` if server responds 200.
+    /// Quick health check — `true` when the server answers as the configured API generation.
     func healthCheck() async throws -> Bool {
-        // 2.x has no `/global/health`; `/api/info` is its cheapest authenticated route.
-        let endpoint = APIEndpoint.get(apiVersion == .v2 ? "/api/info" : "/global/health")
-        let urlRequest = try buildRequest(endpoint)
-        let (_, response) = try await session.data(for: urlRequest)
-        guard let httpResponse = response as? HTTPURLResponse else { return false }
-        return httpResponse.statusCode == 200
+        try await serverVersion() != nil
+    }
+
+    /// The server's version when it speaks `apiVersion`, else `nil`.
+    ///
+    /// Judged from the body, not the status: both generations answer unknown routes
+    /// with their web app (HTML, 200), so a 1.x server "has" `/api/info` and a 2.x
+    /// server "has" `/global/health`.
+    func serverVersion() async throws -> String? {
+        let path = apiVersion == .v2 ? "/api/info" : "/global/health"
+        let data = try await requestData(.get(path))
+        return Self.serverVersion(from: data, apiVersion: apiVersion)
+    }
+
+    static func serverVersion(from data: Data, apiVersion: ServerAPIVersion) -> String? {
+        guard let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return nil }
+        let version = object["version"] as? String
+        switch apiVersion {
+        case .v1: return (object["healthy"] as? Bool) == true ? (version ?? "") : nil
+        case .v2: return object["healthy"] == nil ? version : nil
+        }
+    }
+
+    /// Find out which API generation a server speaks, trying 2.x first.
+    ///
+    /// - Returns: The generation and the server's version string.
+    /// - Throws: The 2.x error when neither generation answers (an auth failure is
+    ///   the most useful one to show, and 2.x servers always require auth).
+    static func detectAPIVersion(
+        baseURL: String,
+        username: String,
+        password: String
+    ) async throws -> (apiVersion: ServerAPIVersion, serverVersion: String) {
+        var firstError: Error?
+        for candidate in [ServerAPIVersion.v2, .v1] {
+            let user = candidate == .v2 && username.isEmpty ? PairingAPI.username : username
+            let client = APIClient(baseURL: baseURL, username: user, password: password, apiVersion: candidate)
+            do {
+                if let version = try await client.serverVersion() { return (candidate, version) }
+            } catch {
+                firstError = firstError ?? error
+            }
+        }
+        throw firstError ?? OpenCodeError.connectionFailed("No OpenCode server answered at this address.")
     }
 
     // MARK: - Private Helpers

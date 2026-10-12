@@ -71,7 +71,7 @@ struct iPadRootView: View {
             )
         }
         .sheet(isPresented: $showAddServer) {
-            AddServerView(connectionManager: connectionManager)
+            ServerFormView(server: nil, connectionManager: connectionManager)
                 .environmentObject(serverStore)
         }
         .task(id: connectionManager.activeServerID) {

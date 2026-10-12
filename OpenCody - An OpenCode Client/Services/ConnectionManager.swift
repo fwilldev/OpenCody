@@ -163,11 +163,22 @@ final class ConnectionManager {
         let healthy: Bool
         do {
             healthy = try await apiClient.healthCheck()
+        } catch let error as OpenCodeError {
+            if case .auth = error { throw error }
+            throw OpenCodeError.connectionFailed("Server health check failed")
         } catch {
             throw OpenCodeError.connectionFailed("Server health check failed")
         }
 
         guard healthy else {
+            // Reachable but not as the configured generation — say which one it is.
+            if let detected = try? await APIClient.detectAPIVersion(
+                baseURL: server.baseURL, username: server.username, password: password
+            ), detected.apiVersion != server.apiVersion {
+                throw OpenCodeError.connectionFailed(
+                    "This server runs \(detected.apiVersion.displayName). Change Server Version in the server settings."
+                )
+            }
             throw OpenCodeError.connectionFailed("Server health check failed")
         }
 

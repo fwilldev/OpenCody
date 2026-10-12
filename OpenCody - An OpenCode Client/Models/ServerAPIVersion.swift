@@ -6,14 +6,14 @@ import Foundation
 ///
 /// The two are not wire-compatible: OpenCode 2.x replaced the whole v1 REST surface
 /// (`/session`, `/global/event`, …) with a new one under `/api/*`, a different message
-/// model and an event-sourced stream. The server does not advertise which one it runs
-/// in a way both generations answer, so the user picks it per server. `.v1` is the
-/// default because it is what every server configured before this setting existed runs.
+/// model and an event-sourced stream. New servers default to `.v2` and the add-server
+/// form detects the right one (`APIClient.detectAPIVersion`); servers saved before the
+/// setting existed decode as `.v1`, which is what they ran.
 nonisolated enum ServerAPIVersion: String, Codable, CaseIterable, Identifiable, Sendable {
-    /// OpenCode 1.x (`opencode-ai` on npm).
-    case v1
     /// OpenCode 2.x (`@opencode/cli` on npm).
     case v2
+    /// OpenCode 1.x (`opencode-ai` on npm).
+    case v1
 
     var id: String { rawValue }
 

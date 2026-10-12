@@ -19,8 +19,8 @@ final class ServerConnection: Identifiable, Codable {
     var createdAt: Date
     var lastConnectedAt: Date?
     var isDefault: Bool
-    /// API generation the server speaks. Defaults to `.v1` for servers saved before
-    /// the setting existed.
+    /// API generation the server speaks. Servers saved before the setting existed
+    /// decode as `.v1`.
     var apiVersion: ServerAPIVersion
 
     /// Computed base URL — not stored by SwiftData.
@@ -43,7 +43,7 @@ final class ServerConnection: Identifiable, Codable {
         createdAt: Date = Date(),
         lastConnectedAt: Date? = nil,
         isDefault: Bool = false,
-        apiVersion: ServerAPIVersion = .v1
+        apiVersion: ServerAPIVersion = .v2
     ) {
         self.id = id
         self.name = name

@@ -6,7 +6,6 @@
 //
 
 import SwiftUI
-import SwiftUI
 
 // MARK: - ServerListView
 
@@ -17,6 +16,8 @@ struct ServerListView: View {
 
     @State private var showAddServer: Bool = false
     @State private var selectedServer: ServerConnection?
+    @State private var pairingServer: ServerConnection?
+    @State private var deletingServer: ServerConnection?
 
     // MARK: - Body
 
@@ -35,21 +36,32 @@ struct ServerListView: View {
         .navigationTitle("Servers")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                Button {
+                Button("Add", systemImage: "plus") {
                     showAddServer = true
-                } label: {
-                    Image(systemName: "plus")
-                        .foregroundStyle(Theme.Colors.cyberBlue)
                 }
+                .keyboardShortcut("n", modifiers: .command)
             }
         }
         .sheet(isPresented: $showAddServer) {
-            AddServerView(connectionManager: connectionManager)
+            ServerFormView(server: nil, connectionManager: connectionManager)
                 .environmentObject(serverStore)
         }
         .sheet(item: $selectedServer) { server in
-            EditServerView(server: server, connectionManager: connectionManager)
+            ServerFormView(server: server, connectionManager: connectionManager)
                 .environmentObject(serverStore)
+        }
+        .sheet(item: $pairingServer) { server in
+            PairDeviceView(server: server)
+        }
+        .confirmationDialog(
+            "Delete Server",
+            isPresented: Binding(get: { deletingServer != nil }, set: { if !$0 { deletingServer = nil } }),
+            titleVisibility: .visible,
+            presenting: deletingServer
+        ) { server in
+            Button("Delete", role: .destructive) { deleteServer(server) }
+        } message: { server in
+            Text("This removes “\(server.name)” and its saved password from this device.")
         }
         .onAppear {
             serverStore.load()
@@ -109,9 +121,7 @@ struct ServerListView: View {
                     ))
             }
             .onDelete { indexSet in
-                for index in indexSet {
-                    deleteServer(serverStore.servers[index])
-                }
+                deletingServer = indexSet.first.map { serverStore.servers[$0] }
             }
         }
         .listStyle(.plain)
@@ -161,6 +171,7 @@ struct ServerListView: View {
             .glassCard()
         }
         .buttonStyle(.plain)
+        .hoverEffect(.highlight)
         .contextMenu {
             Button {
                 connectToServer(server)
@@ -174,12 +185,16 @@ struct ServerListView: View {
                 Label("Edit", systemImage: "pencil")
             }
 
+            if server.apiVersion == .v2 {
+                Button("Pair a Device", systemImage: "link.badge.plus") {
+                    pairingServer = server
+                }
+            }
+
             Divider()
 
-            Button(role: .destructive) {
-                deleteServer(server)
-            } label: {
-                Label("Delete", systemImage: "trash")
+            Button("Delete", systemImage: "trash", role: .destructive) {
+                deletingServer = server
             }
         }
     }

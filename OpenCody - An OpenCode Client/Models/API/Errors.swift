@@ -39,6 +39,7 @@ enum OpenCodeError: Error, LocalizedError, Sendable {
         case .network(let error):
             return "Network error: \(error.localizedDescription)"
         case .auth(let code, let message):
+            if code == 401 { return "Wrong username or password." }
             return "Authentication error (\(code)): \(message)"
         case .server(let code, let message):
             return "Server error (\(code)): \(message)"
