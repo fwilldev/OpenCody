@@ -1,6 +1,4 @@
-<p align="center">
-  <img src="opencody.png" width="128" alt="OpenCody icon">
-</p>
+<img width="1920" height="1280" alt="image" src="https://github.com/user-attachments/assets/59b2b2c5-ce63-47f2-9fc6-f5999be53325" />
 
 # OpenCody
 
