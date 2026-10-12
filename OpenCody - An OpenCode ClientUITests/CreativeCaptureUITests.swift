@@ -1,23 +1,33 @@
 import XCTest
 
-/// Captures real screens for the App Store creative assets (see AppStoreScreenshots/README.md).
+/// Captures real screens for the App Store screenshots and creative assets
+/// (see OpenCody-AppStore/README.md, outside this repo).
 ///
-/// Expects a live OpenCode server whose project already has the two demo sessions named in
-/// `OPENCODY_CAPTURE_SESSIONS` (comma-separated titles; the second one with a pending
-/// permission request). Skipped unless `OPENCODY_CAPTURE_HOST`, `OPENCODY_CAPTURE_PORT`,
-/// `OPENCODY_CAPTURE_PASSWORD`, `OPENCODY_CAPTURE_PROJECT` and `OPENCODY_CAPTURE_SESSIONS`
-/// are set — pass them with the `TEST_RUNNER_` prefix. The added server is deleted again at the end.
+/// Expects a live OpenCode server whose project already has the sessions named in
+/// `OPENCODY_CAPTURE_SESSIONS` (comma-separated titles). The first one also gets its
+/// diff, todos and files captured. Skipped unless `OPENCODY_CAPTURE_HOST`,
+/// `OPENCODY_CAPTURE_PORT`, `OPENCODY_CAPTURE_PASSWORD`, `OPENCODY_CAPTURE_PROJECT`
+/// (folder name) and `OPENCODY_CAPTURE_SESSIONS` are set — pass them with the
+/// `TEST_RUNNER_` prefix. Optional: `OPENCODY_CAPTURE_PAIRING` (a fresh 2.x pairing
+/// link, used instead of host and password), `OPENCODY_CAPTURE_PROJECT_NAME` (renames
+/// the project from its context menu), `OPENCODY_CAPTURE_SERVER_NAME`.
+/// The added server is deleted again at the end on iPhone. iPad runs in landscape and
+/// expects a fresh install without servers.
 final class CreativeCaptureUITests: XCTestCase {
     private var app: XCUIApplication!
+    private var isPad: Bool { UIDevice.current.userInterfaceIdiom == .pad }
 
     override func setUp() {
         continueAfterFailure = false
     }
 
     private func env(_ key: String) throws -> String {
-        guard let value = ProcessInfo.processInfo.environment[key], !value.isEmpty else {
-            throw XCTSkip("\(key) not set")
-        }
+        guard let value = optionalEnv(key) else { throw XCTSkip("\(key) not set") }
+        return value
+    }
+
+    private func optionalEnv(_ key: String) -> String? {
+        guard let value = ProcessInfo.processInfo.environment[key], !value.isEmpty else { return nil }
         return value
     }
 
@@ -44,6 +54,16 @@ final class CreativeCaptureUITests: XCTestCase {
         tab.tap()
     }
 
+    private func openServers() {
+        let servers = app.buttons.matching(NSPredicate(format: "label CONTAINS 'Servers' AND NOT (label CONTAINS 'Manage')")).firstMatch
+        for _ in 0..<3 where !app.buttons["Settings"].firstMatch.isHittable { back() }
+        tapTab("Settings")
+        // The Settings tab remembers an earlier push to Servers.
+        if app.navigationBars["Servers"].waitForExistence(timeout: 2) { return }
+        XCTAssertTrue(servers.waitForExistence(timeout: 5))
+        servers.tap()
+    }
+
     private func deleteServer(named name: String) {
         let row = app.staticTexts[name].firstMatch
         guard row.waitForExistence(timeout: 2) else { return }
@@ -64,107 +84,206 @@ final class CreativeCaptureUITests: XCTestCase {
     }
 
     private func back() {
-        app.navigationBars.buttons.element(boundBy: 0).tap()
+        // On iPad the first bar button can be the sidebar toggle.
+        let button = app.navigationBars.buttons["BackButton"].firstMatch
+        (button.exists ? button : app.navigationBars.buttons.element(boundBy: 0)).tap()
         sleep(1)
     }
 
-    func testCaptureCreativeScreens() throws {
-        let host = try env("OPENCODY_CAPTURE_HOST")
-        let port = try env("OPENCODY_CAPTURE_PORT")
-        let password = try env("OPENCODY_CAPTURE_PASSWORD")
-        let project = try env("OPENCODY_CAPTURE_PROJECT")
-        let sessions = try env("OPENCODY_CAPTURE_SESSIONS").split(separator: ",").map(String.init)
-        let serverName = "My Mac"
+    /// Long-press `element`, capture its context menu, then pick `action`.
+    private func contextMenu(on element: XCUIElement, capture name: String, action: String) {
+        element.press(forDuration: 1.2)
+        let item = app.buttons[action].firstMatch
+        XCTAssertTrue(item.waitForExistence(timeout: 5), "\(action) in context menu")
+        sleep(1)
+        screenshot(name)
+        item.tap()
+    }
 
-        app = XCUIApplication()
-        app.launch()
+    /// Replace the text of the rename alert's field with `name` and save.
+    private func renameInAlert(to name: String, capture: String? = nil) {
+        let field = app.alerts.textFields.firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 60) + name)
+        // A tap sent while the keyboard is still settling after typeText is dropped.
+        sleep(2)
+        if let capture { screenshot(capture) }
+        app.alerts.buttons["Save"].tap()
+    }
 
-        dismissPrompts()
-        tapTab("Settings")
-        let servers = app.buttons.containing(NSPredicate(format: "label CONTAINS 'Servers'")).firstMatch
-        XCTAssertTrue(servers.waitForExistence(timeout: 5))
-        servers.tap()
-        while app.staticTexts[serverName].waitForExistence(timeout: 2) { deleteServer(named: serverName) }
-        app.navigationBars["Servers"].buttons["Add"].firstMatch.tap()
-
-        type(serverName, into: app.textFields["server.name"])
-        type(host, into: app.textFields["server.host"])
-        type(port, into: app.textFields["server.port"])
-        type("opencode", into: app.textFields["server.username"])
-        type(password, into: app.secureTextFields["server.password"])
+    private func addServer(named serverName: String) throws {
+        if isPad {
+            app.buttons["Add Server"].firstMatch.tap()
+        } else {
+            app.navigationBars["Servers"].buttons["Add"].firstMatch.tap()
+        }
+        // Return ends editing, so the keyboard is gone for the form capture.
+        type(serverName + "\n", into: app.textFields["server.name"])
+        if let pairing = optionalEnv("OPENCODY_CAPTURE_PAIRING") {
+            type(pairing + "\n", into: app.textFields["server.pairingLink"])
+            let paired = app.staticTexts.containing(NSPredicate(format: "label BEGINSWITH 'Paired'")).firstMatch
+            XCTAssertTrue(paired.waitForExistence(timeout: 15), "pairing")
+        } else {
+            // Sign-in first: below the address, these hide behind the keyboard on iPad.
+            type("opencode\n", into: app.textFields["server.username"])
+            type(try env("OPENCODY_CAPTURE_PASSWORD") + "\n", into: app.secureTextFields["server.password"])
+            type(try env("OPENCODY_CAPTURE_HOST"), into: app.textFields["server.host"])
+            type(try env("OPENCODY_CAPTURE_PORT"), into: app.textFields["server.port"])
+            let hide = app.keyboards.buttons["Hide keyboard"].firstMatch
+            if hide.exists { hide.tap() }
+        }
+        let detected = app.staticTexts.containing(NSPredicate(format: "label BEGINSWITH 'Detected'")).firstMatch
+        _ = detected.waitForExistence(timeout: 10)
         let test = app.buttons["Test Connection"]
         if !test.isHittable { app.swipeUp() }
         test.tap()
         XCTAssertTrue(app.staticTexts["Connection successful"].waitForExistence(timeout: 15), "test connection")
+        let top = app.staticTexts.containing(NSPredicate(format: "label BEGINSWITH 'Paired' OR label == 'Name'")).firstMatch
+        if !top.isHittable { app.collectionViews.firstMatch.swipeDown() }
+        sleep(2)
+        screenshot("server-form")
         app.buttons["Save Server"].tap()
+    }
 
+    /// The chat of the first session also gets its diff, files and todos captured.
+    private func captureUtilities() {
+        if isPad {
+            app.buttons["Utilities"].firstMatch.tap()
+            sleep(4)
+            screenshot("files")
+            let src = app.staticTexts["src"].firstMatch
+            if src.waitForExistence(timeout: 3) {
+                src.tap()
+                sleep(3)
+                screenshot("files-src")
+            }
+            for (tab, name) in [("Diff", "diff"), ("Todos", "todos")] {
+                app.buttons[tab].firstMatch.tap()
+                sleep(4)
+                screenshot(name)
+            }
+            app.buttons["Utilities"].firstMatch.tap()
+            sleep(1)
+            return
+        }
+        let menu = app.buttons["Session Actions"].firstMatch
+        for (item, name) in [("View Diff", "diff"), ("Todos", "todos"), ("File Explorer", "files")] {
+            XCTAssertTrue(menu.waitForExistence(timeout: 5), "session actions")
+            menu.tap()
+            let button = app.buttons[item].firstMatch
+            XCTAssertTrue(button.waitForExistence(timeout: 3), item)
+            button.tap()
+            sleep(2)
+            // Tapping the grabber moves a half-height sheet to full height.
+            let grabber = app.buttons["Sheet Grabber"].firstMatch
+            if grabber.exists, "\(grabber.value ?? "")".contains("Half") { grabber.tap() }
+            sleep(2)
+            screenshot(name)
+            if name == "files" {
+                let src = app.staticTexts["src"].firstMatch
+                if src.waitForExistence(timeout: 3) {
+                    src.tap()
+                    sleep(3)
+                    screenshot("files-src")
+                }
+            }
+            app.buttons["Close"].firstMatch.tap()
+            sleep(2)
+        }
+    }
+
+    func testCaptureCreativeScreens() throws {
+        _ = try env("OPENCODY_CAPTURE_HOST")
+        let project = try env("OPENCODY_CAPTURE_PROJECT")
+        let sessions = try env("OPENCODY_CAPTURE_SESSIONS").split(separator: ",").map(String.init)
+        let projectName = optionalEnv("OPENCODY_CAPTURE_PROJECT_NAME")
+        let serverName = optionalEnv("OPENCODY_CAPTURE_SERVER_NAME") ?? "Mac Studio"
+
+        if isPad { XCUIDevice.shared.orientation = .landscapeLeft }
+        app = XCUIApplication()
+        app.launch()
+
+        // What's New shows up a few seconds after a fresh install.
+        let whatsNew = app.buttons["Continue"].firstMatch
+        if whatsNew.waitForExistence(timeout: 8) { whatsNew.tap() }
+        dismissPrompts()
+        if !isPad {
+            openServers()
+            while app.staticTexts[serverName].waitForExistence(timeout: 2) { deleteServer(named: serverName) }
+        }
+        try addServer(named: serverName)
+        // The server switcher keeps showing "connecting" for a server added in this launch.
+        sleep(3)
+        app.terminate()
+        app.launch()
+        sleep(5)
+
+        // The project may still carry the custom name of an earlier run.
+        let names = [project, projectName].compactMap { $0 }
+        let projectCell = app.staticTexts.matching(NSPredicate(format: "label IN %@", names)).firstMatch
         // The system "save password" sheet can appear several seconds after saving.
-        let projectCell = app.staticTexts[project].firstMatch
         for _ in 0..<4 where !projectCell.isHittable {
             dismissPrompts()
-            tapTab("Dashboard")
+            if !isPad { tapTab("Dashboard") }
             dismissPrompts()
             _ = projectCell.waitForExistence(timeout: 5)
         }
-        XCTAssertTrue(projectCell.waitForExistence(timeout: 10), "project on dashboard")
+        XCTAssertTrue(projectCell.waitForExistence(timeout: 10), "project listed")
         sleep(2)
+        if let projectName {
+            contextMenu(on: projectCell, capture: "project-menu", action: "Rename Project")
+            renameInAlert(to: projectName, capture: "project-rename")
+            XCTAssertTrue(app.staticTexts[projectName].waitForExistence(timeout: 10), "renamed project")
+            sleep(2)
+        }
         screenshot("dashboard")
-        projectCell.tap()
+        app.staticTexts[projectName ?? project].firstMatch.tap()
 
         let first = app.staticTexts[sessions[0]].firstMatch
         XCTAssertTrue(first.waitForExistence(timeout: 10), "session \(sessions[0])")
         sleep(2)
         screenshot("sessions")
+        if projectName != nil {
+            contextMenu(on: first, capture: "session-menu", action: "Rename Session")
+            sleep(2)
+            screenshot("session-rename")
+            app.alerts.buttons["Cancel"].tap()
+            sleep(1)
+        }
 
-        // Finished session: reply, tool calls, diff and todos.
-        first.tap()
-        sleep(6)
-        screenshot("chat-end")
-        app.swipeDown()
-        sleep(2)
-        screenshot("chat-mid")
-        app.swipeDown()
-        app.swipeDown()
-        sleep(2)
-        screenshot("chat-top")
-        // The actions menu label is the short session id above an ellipsis.
-        let menu = app.navigationBars.buttons.matching(NSPredicate(format: "label BEGINSWITH 'ses_' OR label CONTAINS[c] 'More' OR label == 'Session Actions'")).firstMatch
-        if menu.waitForExistence(timeout: 3) {
-            menu.tap()
-            let diff = app.buttons["View Diff"].firstMatch
-            if diff.waitForExistence(timeout: 3) {
-                diff.tap()
+        for (index, title) in sessions.enumerated() {
+            let row = app.staticTexts[title].firstMatch
+            XCTAssertTrue(row.waitForExistence(timeout: 10), "session \(title)")
+            row.tap()
+            sleep(6)
+            screenshot("chat-\(index)")
+            if isPad, index > 0 {
+                app.buttons["Utilities"].firstMatch.tap()
                 sleep(4)
-                screenshot("diff")
-                app.swipeDown(velocity: .fast)
-                sleep(2)
+                screenshot("chat-\(index)-panel")
+                app.buttons["Utilities"].firstMatch.tap()
             }
-            menu.tap()
-            let todos = app.buttons["Todos"].firstMatch
-            if todos.waitForExistence(timeout: 3) {
-                todos.tap()
-                sleep(3)
-                screenshot("todos")
-                app.swipeDown(velocity: .fast)
-                sleep(2)
-            }
+            if index == 0 { captureUtilities() }
+            back()
         }
+
+        // The iPad sidebar's Settings button ignores synthesized taps: start iPad runs
+        // from a fresh install instead of cleaning up.
+        guard !isPad else { return }
         back()
-
-        // Session waiting on an edit permission.
-        if sessions.count > 1 {
-            let second = app.staticTexts[sessions[1]].firstMatch
-            if second.waitForExistence(timeout: 5) {
-                second.tap()
-                sleep(6)
-                screenshot("permission")
-                back()
-            }
+        sleep(3)
+        screenshot("dashboard-end")
+        openServers()
+        sleep(2)
+        screenshot("servers")
+        let row = app.staticTexts[serverName].firstMatch
+        if optionalEnv("OPENCODY_CAPTURE_PAIRING") != nil, row.exists {
+            contextMenu(on: row, capture: "server-menu", action: "Pair a Device")
+            sleep(3)
+            screenshot("pair-device")
+            app.buttons["Done"].firstMatch.tap()
+            sleep(1)
         }
-
-        for _ in 0..<3 where !app.buttons["Settings"].firstMatch.isHittable { back() }
-        tapTab("Settings")
-        if servers.waitForExistence(timeout: 3) { servers.tap() }
         deleteServer(named: serverName)
     }
 }
