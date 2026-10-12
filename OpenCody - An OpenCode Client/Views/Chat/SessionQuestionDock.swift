@@ -18,6 +18,8 @@ struct SessionQuestionDock: View {
     @State private var isSubmitting: Bool = false
     /// Tracks navigation direction for slide transition.
     @State private var navigatingForward: Bool = true
+    @State private var submitCount = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var currentQuestion: QuestionInfo {
         request.questions[currentIndex]
@@ -52,7 +54,7 @@ struct SessionQuestionDock: View {
                 // C + D + E. Question content (animated)
                 questionContent
                     .id(currentIndex)
-                    .transition(
+                    .transition(reduceMotion ? .opacity :
                         .asymmetric(
                             insertion: .move(edge: navigatingForward ? .trailing : .leading),
                             removal: .move(edge: navigatingForward ? .leading : .trailing)
@@ -71,7 +73,9 @@ struct SessionQuestionDock: View {
                     .shadow(color: Theme.Colors.shadow, radius: 12)
             )
             .padding(.horizontal, Theme.Spacing.xl)
+            .accessibilityAddTraits(.isModal)
         }
+        .sensoryFeedback(.success, trigger: submitCount)
         .onAppear {
             if answers.isEmpty {
                 answers = Array(repeating: [], count: request.questions.count)
@@ -329,6 +333,7 @@ struct SessionQuestionDock: View {
     private func submit() {
         guard !isSubmitting else { return }
         isSubmitting = true
+        submitCount += 1
         Task {
             defer { isSubmitting = false }
             do {

@@ -3,6 +3,7 @@ import SwiftUI
 struct MessageBubbleView: View {
     let messageWithParts: MessageWithParts
     let viewModel: ChatViewModel
+    @State private var copyCount = 0
 
     private var roleIcon: String {
         switch messageWithParts.message.role {
@@ -146,10 +147,12 @@ struct MessageBubbleView: View {
                 )
         )
         .opacity(isLocalPending ? 0.7 : 1.0)
+        .sensoryFeedback(.success, trigger: copyCount)
         .contextMenu {
             if hasCopyableText {
                 Button {
                     UIPasteboard.general.string = buildCopyableText()
+                    copyCount += 1
                 } label: {
                     Label("Copy", systemImage: "doc.on.doc")
                 }

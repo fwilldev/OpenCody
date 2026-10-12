@@ -52,6 +52,7 @@ struct ProjectCardView: View {
                             .frame(width: 6, height: 6)
                             .shadow(color: Theme.Colors.neonGreen.opacity(0.6), radius: 3)
                         Text("\(activeSessions) active")
+                            .contentTransition(.numericText(value: Double(activeSessions)))
                             .font(Theme.Fonts.codeCaption)
                             .foregroundStyle(Theme.Colors.neonGreen)
                     }

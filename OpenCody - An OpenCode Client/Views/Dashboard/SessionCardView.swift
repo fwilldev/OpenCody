@@ -92,9 +92,11 @@ struct SessionCardView: View {
                             .foregroundStyle(Theme.Colors.smoke)
 
                         Text("+\(totals.additions)")
+                            .contentTransition(.numericText(value: Double(totals.additions)))
                             .font(Theme.Fonts.codeCaption)
                             .foregroundStyle(Theme.Colors.neonGreen.opacity(0.8))
                         Text("-\(totals.deletions)")
+                            .contentTransition(.numericText(value: Double(totals.deletions)))
                             .font(Theme.Fonts.codeCaption)
                             .foregroundStyle(Theme.Colors.hotPink.opacity(0.8))
                     }

@@ -13,6 +13,10 @@ struct ChatView: View {
     @State private var isAtBottom = true
     @State private var scrollViewHeight: CGFloat = 0
     @FocusState private var isInputFocused: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Bumped on Allow / Deny to play the matching haptic.
+    @State private var allowCount = 0
+    @State private var denyCount = 0
 
     init(
         session: Session,
@@ -118,6 +122,8 @@ struct ChatView: View {
             viewModel.stopObservingEvents()
         }
         .toolbarVisibility(.hidden, for: .tabBar)
+        .sensoryFeedback(.success, trigger: allowCount)
+        .sensoryFeedback(.warning, trigger: denyCount)
         .navigationDestination(item: $viewModel.forkedSession) { forked in
             ChatView(session: forked, connectionManager: connectionManager)
         }
@@ -137,20 +143,19 @@ struct ChatView: View {
                             HStack {
                                 if viewModel.isLoadingMore {
                                     ProgressView()
-                                        .tint(Theme.Colors.cyberBlue)
-                                        .scaleEffect(0.8)
+                                        .controlSize(.small)
                                 }
                                 Text(viewModel.isLoadingMore ? "Loading…" : "Load Earlier Messages")
                                     .font(.caption)
                                     .foregroundStyle(Theme.Colors.cyberBlue)
                             }
-                            .padding(.vertical, Theme.Spacing.sm)
+                            .frame(minHeight: 44)
                         }
                     }
 
                     ForEach(viewModel.displayMessages) { msgWithParts in
                         MessageBubbleView(messageWithParts: msgWithParts, viewModel: viewModel)
-                            .transition(
+                            .transition(reduceMotion ? .opacity :
                                 .asymmetric(
                                     insertion: .move(edge: .bottom)
                                         .combined(with: .opacity)
@@ -168,7 +173,7 @@ struct ChatView: View {
                         TypingIndicatorView()
                             .padding(.vertical, Theme.Spacing.xs)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .transition(
+                            .transition(reduceMotion ? .opacity :
                                 .asymmetric(
                                     insertion: .move(edge: .bottom)
                                         .combined(with: .opacity)
@@ -182,11 +187,12 @@ struct ChatView: View {
                     if viewModel.hiddenStepMessageCount > 0 {
                         HStack(spacing: 6) {
                             Image(systemName: "arrow.triangle.branch")
-                                .font(.system(size: 10))
-                                .foregroundStyle(Theme.Colors.smoke)
+                                .font(.caption2)
+                                .foregroundStyle(Theme.Colors.silver)
                             Text("\(viewModel.hiddenStepMessageCount) intermediate steps hidden")
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundStyle(Theme.Colors.smoke)
+                                .font(.caption2.weight(.medium))
+                                .foregroundStyle(Theme.Colors.silver)
+                                .contentTransition(.numericText(value: Double(viewModel.hiddenStepMessageCount)))
                         }
                         .padding(.vertical, 6)
                         .padding(.horizontal, 12)
@@ -345,6 +351,7 @@ struct ChatView: View {
 
                 HStack(spacing: Theme.Spacing.md) {
                     Button("Deny") {
+                        denyCount += 1
                         Task { try? await viewModel.replyToPermission(permission, decision: .reject) }
                     }
                     .foregroundStyle(Theme.Colors.hotPink)
@@ -360,6 +367,7 @@ struct ChatView: View {
                     )
 
                     Button("Allow") {
+                        allowCount += 1
                         Task { try? await viewModel.replyToPermission(permission, decision: .once) }
                     }
                     .foregroundStyle(Theme.Colors.cyberBlue)
@@ -377,6 +385,7 @@ struct ChatView: View {
 
                 if permission.supportsAlways {
                     Button("Always Allow") {
+                        allowCount += 1
                         Task { try? await viewModel.replyToPermission(permission, decision: .always) }
                     }
                     .font(.footnote.weight(.medium))
@@ -398,6 +407,7 @@ struct ChatView: View {
                     .shadow(color: Theme.Colors.shadow, radius: 12)
             )
             .padding(.horizontal, Theme.Spacing.xl)
+            .accessibilityAddTraits(.isModal)
         }
     }
 }
