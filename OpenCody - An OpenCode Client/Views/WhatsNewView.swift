@@ -5,7 +5,7 @@ import SwiftUI
 /// Release notes shown once per release, the first time the updated app launches.
 enum WhatsNew {
     /// The release these notes describe. Bump it (and the notes) to show the sheet again.
-    static let version = "1.7"
+    static let version = "1.8"
 
     private static let seenKey = "whatsNew_lastSeenVersion"
 
@@ -26,24 +26,24 @@ struct WhatsNewView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
-            Text("OpenCody \(WhatsNew.version) Changelog")
-                .font(Theme.Fonts.title2)
-                .foregroundStyle(Theme.Colors.cloud)
-                .padding(.top, Theme.Spacing.xl)
+            // Scrolls so large Dynamic Type sizes never clip the notes.
+            ScrollView {
+                VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
+                    Text("What's New in OpenCody \(WhatsNew.version)")
+                        .font(Theme.Fonts.title2)
+                        .foregroundStyle(Theme.Colors.cloud)
+                        .padding(.top, Theme.Spacing.xl)
 
-            VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-                item("OpenCody now supports OpenCode 2.x.")
-                item("Some improvements and bug fixes.")
-                VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
-                    item("OpenCody is now open source.")
-                    Link("github.com/fwilldev/OpenCody", destination: AppLinks.sourceCode)
-                        .font(Theme.Fonts.body)
-                        .foregroundStyle(Theme.Colors.cyberBlue)
-                        .padding(.leading, Theme.Spacing.lg)
+                    VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+                        item("Rename sessions and projects: press and hold one, or right-click on iPad. Thanks for the suggestion!")
+                        item("New servers use OpenCode 2.x, and the app detects which version a server runs.")
+                        item("Pair with a pairing link instead of typing the password (OpenCode 2.x).")
+                        item("Search and page through sessions, and fork a chat from any message.")
+                        item("A cleaner, more accessible interface, with a proper iPad layout and keyboard shortcuts.")
+                    }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-
-            Spacer()
 
             Button {
                 dismiss()
