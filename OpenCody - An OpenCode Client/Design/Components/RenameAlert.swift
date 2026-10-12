@@ -1,7 +1,5 @@
 import SwiftUI
 
-// MARK: - RenameAlert
-
 /// A text-field alert for renaming whatever `item` holds; shown while it is non-nil.
 private struct RenameAlert<Item: Identifiable>: ViewModifier {
     let title: String

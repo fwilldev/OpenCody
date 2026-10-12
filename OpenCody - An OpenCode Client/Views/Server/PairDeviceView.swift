@@ -1,7 +1,5 @@
 import SwiftUI
 
-// MARK: - PairDeviceView
-
 /// Creates a single-use pairing link for an OpenCode 2.x server, to sign in another
 /// device (or the server's web app) without typing the password.
 struct PairDeviceView: View {

@@ -1,7 +1,5 @@
 import Foundation
 
-// MARK: - PairingAPI (OpenCode 2.x)
-
 /// Pairing links: `POST /api/pair` creates a short-lived, single-use
 /// `/auth/connect/{code}` link; redeeming it returns a session token that works as
 /// the basic-auth password for the user `opencode` (valid for about 30 days).

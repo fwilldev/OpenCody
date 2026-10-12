@@ -1,7 +1,5 @@
 import Foundation
 
-// MARK: - ProjectGroup
-
 /// Sessions sharing one project directory, as listed on the dashboard and iPad sidebar.
 struct ProjectGroup: Identifiable {
     let directory: String

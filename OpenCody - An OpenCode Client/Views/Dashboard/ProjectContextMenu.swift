@@ -1,7 +1,5 @@
 import SwiftUI
 
-// MARK: - ProjectContextMenu
-
 /// Context menu items for a project row: rename, reset name, close/reopen.
 struct ProjectContextMenu: View {
     let group: ProjectGroup

@@ -1,7 +1,5 @@
 import Foundation
 
-// MARK: - ServerDraft
-
 /// Editable copy of a server's settings, so Cancel never touches the saved server.
 struct ServerDraft: Equatable {
     var name = ""

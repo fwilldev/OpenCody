@@ -1,7 +1,5 @@
 import Foundation
 
-// MARK: - ServerTime
-
 /// Server timestamps arrive in seconds or milliseconds; one shared formatter renders them.
 enum ServerTime {
     private static let relative: RelativeDateTimeFormatter = {

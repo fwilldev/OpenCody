@@ -1,7 +1,5 @@
 import Foundation
 
-// MARK: - ProjectNameStore
-
 /// Custom project names kept on the device, per server and project directory.
 ///
 /// Used for directories the server cannot name itself: folders outside a git

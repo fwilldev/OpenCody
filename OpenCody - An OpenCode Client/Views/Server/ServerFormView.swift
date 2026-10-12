@@ -1,7 +1,5 @@
 import SwiftUI
 
-// MARK: - ServerFormView
-
 /// Add or edit a server: one native form for both, working on a `ServerDraft`.
 ///
 /// The API generation is detected as soon as the address is entered (2.x first,
