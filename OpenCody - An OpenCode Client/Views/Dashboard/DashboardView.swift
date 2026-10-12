@@ -18,6 +18,7 @@ struct DashboardView: View {
     @State private var showAddServer: Bool = false
     @State private var showTipJar: Bool = false
     @State private var createdSession: Session?
+    @State private var renamingProject: ProjectGroup?
     @EnvironmentObject private var serverStore: ServerStoreModel
 
     /// Tracks how many times this view has appeared during the current app session.
@@ -41,25 +42,6 @@ struct DashboardView: View {
     private var isActiveServerOffline: Bool {
         guard let id = connectionManager.activeServerID else { return false }
         return connectionManager.connectionState(for: id) == .offline
-    }
-
-    /// Sessions grouped by the last component of their directory path (i.e. project folder name).
-    private var sessionsByProject: [(key: String, sessions: [Session], directory: String)] {
-        let grouped = Dictionary(grouping: viewModel.activeSessions) { session -> String in
-            // Use the last path component as the project name; fall back to full path
-            let components = session.directory
-                .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-                .split(separator: "/")
-            return components.last.map(String.init) ?? session.directory
-        }
-        let closed = viewModel.closedDirectories
-        return grouped
-            .sorted { $0.key.lowercased() < $1.key.lowercased() }
-            .map { (key: $0.key, sessions: $0.value.sorted { $0.time.updated > $1.time.updated }, directory: $0.value.first?.directory ?? "") }
-            .filter { group in
-                if viewModel.showClosedProjects { return true }
-                return !closed.contains(group.directory)
-            }
     }
 
     /// Whether there are any closed projects to potentially show.
@@ -150,6 +132,7 @@ struct DashboardView: View {
             viewModel.loadClosedProjects()
             await viewModel.loadSessions()
             await viewModel.loadStatuses()
+            await viewModel.loadProjects()
             viewModel.startObservingEvents()
         }
         .onChange(of: isActiveServerOffline) { wasOffline, isOffline in
@@ -164,6 +147,7 @@ struct DashboardView: View {
         .onDisappear {
             viewModel.stopObservingEvents()
         }
+        .projectRenameAlert($renamingProject, viewModel: viewModel)
         .sheet(isPresented: $showTipJar) {
             NavigationStack {
                 TipJarView()
@@ -305,37 +289,26 @@ struct DashboardView: View {
     private var projectList: some View {
         ScrollView {
             LazyVStack(spacing: Theme.Spacing.sm) {
-                ForEach(sessionsByProject, id: \.key) { group in
-                    let isClosed = viewModel.isProjectClosed(directory: group.directory)
-
+                ForEach(viewModel.projectGroups) { group in
                     NavigationLink(destination: ProjectSessionsView(
-                        projectName: group.key,
-                        projectPath: group.sessions.first?.directory,
+                        projectName: group.name,
+                        projectPath: group.directory,
                         initialStatusMap: viewModel.statusMap,
                         viewModel: viewModel,
                         connectionManager: connectionManager
                     )) {
                         ProjectCardView(
-                            projectName: group.key,
+                            projectName: group.name,
+                            projectPath: group.directory,
                             activeSessions: group.sessions.filter { isBusy(viewModel.statusMap[$0.id]) }.count,
                             lastUpdated: group.sessions.first?.time.updated ?? 0
                         )
-                        .opacity(isClosed ? 0.5 : 1.0)
+                        .opacity(viewModel.isProjectClosed(directory: group.directory) ? 0.5 : 1.0)
                     }
                     .buttonStyle(.plain)
                     .contextMenu {
-                        if isClosed {
-                            Button {
-                                withAnimation { viewModel.reopenProject(directory: group.directory) }
-                            } label: {
-                                Label("Reopen Project", systemImage: "eye")
-                            }
-                        } else {
-                            Button {
-                                withAnimation { viewModel.closeProject(directory: group.directory) }
-                            } label: {
-                                Label("Close Project", systemImage: "eye.slash")
-                            }
+                        ProjectContextMenu(group: group, viewModel: viewModel) {
+                            renamingProject = group
                         }
                     }
                 }

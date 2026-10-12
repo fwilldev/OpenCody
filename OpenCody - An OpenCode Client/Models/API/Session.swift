@@ -17,7 +17,7 @@ struct Session: Codable, Identifiable, Sendable, Hashable {
     let parentID: String?
     let summary: SessionSummary?
     let share: SessionShare?
-    let title: String
+    var title: String
     /// Agent bound to the session.
     let agent: String?
     /// Model bound to the session.
@@ -56,8 +56,19 @@ struct Session: Codable, Identifiable, Sendable, Hashable {
     /// Whether the server is currently compacting this session's context.
     var isCompacting: Bool { time.compacting != nil }
 
+    /// Identity plus the fields rows display, so SwiftUI re-renders a renamed or
+    /// updated session. Hashing stays on `id`, which equal values always share.
     static func == (lhs: Session, rhs: Session) -> Bool {
         lhs.id == rhs.id
+            && lhs.title == rhs.title
+            && lhs.time.updated == rhs.time.updated
+            && lhs.time.archived == rhs.time.archived
+    }
+
+    func retitled(_ title: String) -> Session {
+        var copy = self
+        copy.title = title
+        return copy
     }
 
     func hash(into hasher: inout Hasher) {

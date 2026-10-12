@@ -31,6 +31,8 @@ struct ProjectSessionsView: View {
     @State private var displayLimit: Int = 5
     @State private var hasMore: Bool = false
     @State private var showArchived: Bool = false
+    @State private var renamingSession: Session?
+    @State private var deletingSession: Session?
 
     /// OpenCode 2.x cannot archive sessions, so its archive controls are hidden.
     private var supportsArchiving: Bool {
@@ -103,8 +105,14 @@ struct ProjectSessionsView: View {
                     .padding(.vertical, Theme.Spacing.sm)
                 }
             }
+
+            if let loadError {
+                ErrorBanner(error: .network(loadError), onDismiss: { self.loadError = nil })
+                    .padding(.horizontal, Theme.Spacing.md)
+                    .padding(.top, Theme.Spacing.xs)
+            }
         }
-        .navigationTitle(projectName)
+        .navigationTitle(projectPath.map(viewModel.projectName(for:)) ?? projectName)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 HStack(spacing: Theme.Spacing.sm) {
@@ -147,6 +155,27 @@ struct ProjectSessionsView: View {
         }
         .navigationDestination(item: $createdSession) { session in
             chatDestination(for: session)
+        }
+        .renameAlert(
+            "Rename Session",
+            item: $renamingSession,
+            currentName: { $0.title },
+            onSave: { session, title in Task { await rename(session, to: title) } }
+        )
+        .confirmationDialog(
+            "Delete this session?",
+            isPresented: Binding(get: { deletingSession != nil }, set: { if !$0 { deletingSession = nil } }),
+            titleVisibility: .visible,
+            presenting: deletingSession
+        ) { session in
+            Button("Delete Session", role: .destructive) {
+                Task {
+                    try? await viewModel.deleteSession(id: session.id)
+                    withAnimation { projectSessions.removeAll { $0.id == session.id } }
+                }
+            }
+        } message: { session in
+            Text("“\(session.title.isEmpty ? "Untitled Session" : session.title)” and its messages will be removed from the server.")
         }
         .task(id: projectPath) {
             stopObservingEvents()
@@ -286,6 +315,10 @@ struct ProjectSessionsView: View {
         }
         .buttonStyle(.plain)
         .contextMenu {
+            Button("Rename Session", systemImage: "pencil") {
+                renamingSession = session
+            }
+
             if !supportsArchiving {
                 EmptyView()
             } else if session.time.archived != nil {
@@ -302,14 +335,21 @@ struct ProjectSessionsView: View {
                 }
             }
 
-            Button(role: .destructive) {
-                Task {
-                    try? await viewModel.deleteSession(id: session.id)
-                    projectSessions.removeAll { $0.id == session.id }
-                }
-            } label: {
-                Label("Delete", systemImage: "trash")
+            Button("Delete", systemImage: "trash", role: .destructive) {
+                deletingSession = session
             }
+        }
+    }
+
+    private func rename(_ session: Session, to title: String) async {
+        guard let index = projectSessions.firstIndex(where: { $0.id == session.id }) else { return }
+        projectSessions[index] = session.retitled(title)
+        do {
+            let updated = try await viewModel.renameSession(session, to: title)
+            if let i = projectSessions.firstIndex(where: { $0.id == session.id }) { projectSessions[i] = updated }
+        } catch {
+            if let i = projectSessions.firstIndex(where: { $0.id == session.id }) { projectSessions[i] = session }
+            loadError = "Couldn't rename the session: \(error.localizedDescription)"
         }
     }
 

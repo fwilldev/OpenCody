@@ -15,8 +15,8 @@ struct iPadSidebarView: View {
     let openSettings: () -> Void
 
     @EnvironmentObject private var serverStore: ServerStoreModel
-    @State private var expandedProjects: Set<String> = []
     @State private var showTipJar: Bool = false
+    @State private var renamingProject: ProjectGroup?
 
     /// Whether the active server's connection is in the offline state.
     private var isActiveServerOffline: Bool {
@@ -124,56 +124,49 @@ struct iPadSidebarView: View {
                         .font(Theme.Fonts.caption)
                         .foregroundStyle(Theme.Colors.silver)
                 } else {
-                    ForEach(sessionsByProject, id: \.key) { project in
-                        let isClosed = viewModel.isProjectClosed(directory: project.directory)
-
+                    ForEach(viewModel.projectGroups) { project in
                         Button {
-                            selectedProjectKey = project.key
+                            selectedProjectKey = project.directory
                         } label: {
-                            HStack(spacing: Theme.Spacing.sm) {
+                            Label {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(project.name)
+                                        .font(Theme.Fonts.bodyBold)
+                                        .foregroundStyle(Theme.Colors.cloud)
+                                        .lineLimit(1)
+                                    if project.hasCustomName {
+                                        Text(project.directory)
+                                            .font(Theme.Fonts.codeCaption)
+                                            .foregroundStyle(Theme.Colors.silver)
+                                            .lineLimit(1)
+                                            .truncationMode(.middle)
+                                    }
+                                }
+                            } icon: {
                                 Image(systemName: "folder.fill")
-                                    .font(.system(size: 13, weight: .medium))
                                     .foregroundStyle(Theme.Colors.cyberBlue)
-                                Text(project.key)
-                                    .font(Theme.Fonts.bodyBold)
-                                    .foregroundStyle(Theme.Colors.cloud)
-                                    .lineLimit(1)
                             }
-                            .opacity(isClosed ? 0.5 : 1.0)
+                            .opacity(viewModel.isProjectClosed(directory: project.directory) ? 0.5 : 1.0)
                         }
                         .buttonStyle(.plain)
-                        .tag(project.key)
+                        .tag(project.directory)
                         .listRowBackground(glassRowBackground)
                         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                            if isClosed {
-                                Button {
+                            if viewModel.isProjectClosed(directory: project.directory) {
+                                Button("Open", systemImage: "eye") {
                                     withAnimation { viewModel.reopenProject(directory: project.directory) }
-                                } label: {
-                                    Label("Open", systemImage: "eye")
                                 }
-                                .tint(Color.blue)
+                                .tint(.blue)
                             } else {
-                                Button {
+                                Button("Close", systemImage: "eye.slash") {
                                     withAnimation { viewModel.closeProject(directory: project.directory) }
-                                } label: {
-                                    Label("Close", systemImage: "eye.slash")
                                 }
                                 .tint(.orange)
                             }
                         }
                         .contextMenu {
-                            if isClosed {
-                                Button {
-                                    withAnimation { viewModel.reopenProject(directory: project.directory) }
-                                } label: {
-                                    Label("Reopen Project", systemImage: "eye")
-                                }
-                            } else {
-                                Button {
-                                    withAnimation { viewModel.closeProject(directory: project.directory) }
-                                } label: {
-                                    Label("Close Project", systemImage: "eye.slash")
-                                }
+                            ProjectContextMenu(group: project, viewModel: viewModel) {
+                                renamingProject = project
                             }
                         }
                     }
@@ -262,16 +255,12 @@ struct iPadSidebarView: View {
                 }
             }
         }
-        .task { }
         .sheet(isPresented: $showTipJar) {
             NavigationStack {
                 TipJarView()
             }
         }
-        .onChange(of: viewModel.sessions) { _, _ in
-            // Auto-expand any new projects
-            // Keep collapsed by default
-        }
+        .projectRenameAlert($renamingProject, viewModel: viewModel)
     }
 
     // MARK: - Server Switcher Row
@@ -332,8 +321,6 @@ struct iPadSidebarView: View {
         }
         .buttonStyle(.plain)
     }
-
-    // MARK: - Session Row (removed for iPad project list)
 
     // MARK: - Settings Row
 
@@ -396,26 +383,5 @@ struct iPadSidebarView: View {
 
     private func statusColor(for server: ServerConnection) -> Color {
         connectionManager.connectionState(for: server.id).displayStatus.color
-    }
-
-    // MARK: - Session helpers removed
-
-    // MARK: - Delete helpers removed
-
-    private var sessionsByProject: [(key: String, sessions: [Session], directory: String)] {
-        let grouped = Dictionary(grouping: viewModel.activeSessions) { session -> String in
-            let components = session.directory
-                .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-                .split(separator: "/")
-            return components.last.map(String.init) ?? session.directory
-        }
-        let closed = viewModel.closedDirectories
-        return grouped
-            .sorted { $0.key.lowercased() < $1.key.lowercased() }
-            .map { (key: $0.key, sessions: $0.value.sorted { $0.time.updated > $1.time.updated }, directory: $0.value.first?.directory ?? "") }
-            .filter { group in
-                if viewModel.showClosedProjects { return true }
-                return !closed.contains(group.directory)
-            }
     }
 }

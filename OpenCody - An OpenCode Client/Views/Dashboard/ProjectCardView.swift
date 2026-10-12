@@ -12,6 +12,7 @@ import SwiftUI
 /// A glass-morphism card displaying a project summary with session count and activity.
 struct ProjectCardView: View {
     let projectName: String
+    let projectPath: String
     let activeSessions: Int
     let lastUpdated: Double
 
@@ -29,6 +30,12 @@ struct ProjectCardView: View {
                     .foregroundStyle(Theme.Colors.cloud)
                     .lineLimit(1)
             }
+
+            Text(projectPath)
+                .font(Theme.Fonts.codeCaption)
+                .foregroundStyle(Theme.Colors.silver)
+                .lineLimit(1)
+                .truncationMode(.middle)
 
             // Bottom row: relative time, active indicator
             HStack {

@@ -451,6 +451,19 @@ final class ChatViewModel {
         }
     }
 
+    /// Rename the session, showing the new title at once and reverting if the server refuses.
+    func renameSession(to title: String) async {
+        guard let client = connectionManager.activeAPIClient else { return }
+        let original = session
+        session = original.retitled(title)
+        do {
+            session = try await SessionAPI(client: client, directory: original.directory).update(id: original.id, title: title)
+        } catch {
+            session = original
+            self.error = "Couldn't rename the session: \(error.localizedDescription)"
+        }
+    }
+
     /// Abort the currently running generation for this session.
     func abort() async throws {
         guard let client = connectionManager.activeAPIClient else {

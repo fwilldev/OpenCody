@@ -64,12 +64,7 @@ struct iPadRootView: View {
                 viewModel: dashboardViewModel,
                 connectionManager: connectionManager,
                 onSessionCreated: { session in
-                    // Select the project containing the new session so its session list is shown
-                    let components = session.directory
-                        .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-                        .split(separator: "/")
-                    let projectKey = components.last.map(String.init) ?? session.directory
-                    selectedProjectKey = projectKey
+                    selectedProjectKey = session.directory
                     showSettings = false
                     detailPath = NavigationPath()
                 }
@@ -82,8 +77,10 @@ struct iPadRootView: View {
         .task(id: connectionManager.activeServerID) {
             dashboardViewModel.stopObservingEvents()
             await waitForActiveClient()
+            dashboardViewModel.loadClosedProjects()
             await dashboardViewModel.loadSessions()
             await dashboardViewModel.loadStatuses()
+            await dashboardViewModel.loadProjects()
             dashboardViewModel.startObservingEvents()
         }
         .onChange(of: connectionManager.activeAPIClient != nil) { _, hasClient in
@@ -124,13 +121,12 @@ struct iPadRootView: View {
             )
         }
 
-        if let projectKey = selectedProjectKey,
-           let group = sessionsByProject.first(where: { $0.key == projectKey }) {
+        if let directory = selectedProjectKey {
             return AnyView(
                 NavigationStack(path: $detailPath) {
                     ProjectSessionsView(
-                        projectName: group.key,
-                        projectPath: group.sessions.first?.directory,
+                        projectName: dashboardViewModel.projectName(for: directory),
+                        projectPath: directory,
                         initialStatusMap: dashboardViewModel.statusMap,
                         viewModel: dashboardViewModel,
                         connectionManager: connectionManager
@@ -140,18 +136,6 @@ struct iPadRootView: View {
         }
 
         return AnyView(settingsOrEmptyContent)
-    }
-
-    private var sessionsByProject: [(key: String, sessions: [Session])] {
-        let grouped = Dictionary(grouping: dashboardViewModel.sessions) { (session: Session) -> String in
-            let components = session.directory
-                .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-                .split(separator: "/")
-            return components.last.map(String.init) ?? session.directory
-        }
-        return grouped
-            .sorted { $0.key.lowercased() < $1.key.lowercased() }
-            .map { (key: $0.key, sessions: $0.value.sorted { $0.time.updated > $1.time.updated }) }
     }
 
     // MARK: - Empty / Settings State

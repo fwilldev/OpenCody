@@ -22,9 +22,14 @@ struct SessionActionsMenu: View {
     @State private var forkedSessionID: String? = nil
     @State private var showFileExplorer = false
     @State private var showContextUsage = false
+    @State private var renamingSession: Session?
 
     var body: some View {
         Menu {
+            Button("Rename Session", systemImage: "pencil") {
+                renamingSession = session
+            }
+
             // Copy Session ID
             Button {
                 UIPasteboard.general.string = session.id
@@ -126,6 +131,12 @@ struct SessionActionsMenu: View {
                     .foregroundStyle(Theme.Colors.silver)
             }
         }
+        .renameAlert(
+            "Rename Session",
+            item: $renamingSession,
+            currentName: { $0.title },
+            onSave: { _, title in Task { await viewModel.renameSession(to: title) } }
+        )
         .sheet(isPresented: $showDiff) {
             SessionDiffView(session: session, apiClient: apiClient)
         }

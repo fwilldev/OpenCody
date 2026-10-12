@@ -21,11 +21,16 @@ final class DashboardViewModel {
     var statusMap: [String: SessionStatus] = [:]
     var showArchived: Bool = false
     var showClosedProjects: Bool = false
+    /// Server-side projects, used to resolve and set project names.
+    var projects: [Project] = []
+    /// Device-local project names (directory → name) for the active server.
+    var customProjectNames: [String: String] = [:]
 
     // MARK: - Dependencies
 
     @ObservationIgnored private let connectionManager: ConnectionManager
     @ObservationIgnored private let closedProjectsStore = ClosedProjectsStore.shared
+    @ObservationIgnored private let projectNameStore = ProjectNameStore()
 
     // MARK: - Init
 
@@ -39,6 +44,7 @@ final class DashboardViewModel {
     func loadClosedProjects() {
         guard let serverID = connectionManager.activeServerID else { return }
         closedProjectsStore.load(for: serverID)
+        customProjectNames = projectNameStore.names(for: serverID)
     }
 
     /// Whether a given directory is currently closed.
@@ -61,6 +67,86 @@ final class DashboardViewModel {
     /// The set of currently closed directory paths (for filtering).
     var closedDirectories: Set<String> {
         closedProjectsStore.closedDirectories
+    }
+
+    // MARK: - Projects
+
+    /// Visible sessions grouped by project directory, sorted by display name.
+    var projectGroups: [ProjectGroup] {
+        let closed = closedDirectories
+        return Dictionary(grouping: activeSessions, by: \.directory)
+            .map { directory, sessions in
+                ProjectGroup(
+                    directory: directory,
+                    name: projectName(for: directory),
+                    hasCustomName: hasCustomName(directory: directory),
+                    sessions: sessions.sorted { $0.time.updated > $1.time.updated }
+                )
+            }
+            .filter { showClosedProjects || !closed.contains($0.directory) }
+            .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+
+    /// The server project that owns exactly this directory, if it can be renamed server-side.
+    ///
+    /// Non-git folders all share the server's `global` project, and a git project's
+    /// name applies to every checkout, so only a project's primary worktree qualifies.
+    func serverProject(for directory: String) -> Project? {
+        projects.first { $0.id != "global" && $0.worktree == directory }
+    }
+
+    /// Display name for a project directory: local name, then server name, then folder name.
+    func projectName(for directory: String) -> String {
+        if let custom = customProjectNames[directory] { return custom }
+        if let name = serverProject(for: directory)?.name, !name.isEmpty { return name }
+        let folder = (directory as NSString).lastPathComponent
+        return folder.isEmpty ? directory : folder
+    }
+
+    func hasCustomName(directory: String) -> Bool {
+        customProjectNames[directory] != nil || !(serverProject(for: directory)?.name ?? "").isEmpty
+    }
+
+    /// Rename a project, or reset it to its folder name when `name` is empty.
+    ///
+    /// Uses the server's project name where the server can store one for just this
+    /// directory, otherwise a device-local name. Applied optimistically.
+    func renameProject(directory: String, to name: String) async throws {
+        guard let serverID = connectionManager.activeServerID else { return }
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard let project = serverProject(for: directory), let client = connectionManager.activeAPIClient else {
+            projectNameStore.setName(trimmed, directory: directory, serverID: serverID)
+            customProjectNames = projectNameStore.names(for: serverID)
+            return
+        }
+
+        // A server name supersedes any older local one.
+        projectNameStore.setName(nil, directory: directory, serverID: serverID)
+        customProjectNames = projectNameStore.names(for: serverID)
+        let previous = projects
+        replaceProject(project.renamed(trimmed))
+        do {
+            let updated = try await FileAPI(client: client).updateProject(projectID: project.id, name: trimmed)
+            replaceProject(updated)
+        } catch {
+            projects = previous
+            throw error
+        }
+    }
+
+    private func replaceProject(_ project: Project) {
+        if let index = projects.firstIndex(where: { $0.id == project.id }) {
+            projects[index] = project
+        }
+    }
+
+    /// Load server projects. Failures only cost the server-side names.
+    func loadProjects() async {
+        guard let client = connectionManager.activeAPIClient else { return }
+        if let loaded = try? await FileAPI(client: client).listProjects() {
+            projects = loaded
+        }
     }
 
     // MARK: - Filtered Sessions
@@ -207,6 +293,29 @@ final class DashboardViewModel {
         }
     }
 
+    /// Rename a session, showing the new title immediately and reverting if the server refuses.
+    @discardableResult
+    func renameSession(_ session: Session, to title: String) async throws -> Session {
+        guard let client = connectionManager.activeAPIClient else {
+            throw OpenCodeError.connectionFailed("No active server connection")
+        }
+        replaceSession(session.retitled(title))
+        do {
+            let updated = try await SessionAPI(client: client, directory: session.directory).update(id: session.id, title: title)
+            replaceSession(updated)
+            return updated
+        } catch {
+            replaceSession(session)
+            throw error
+        }
+    }
+
+    private func replaceSession(_ session: Session) {
+        if let index = sessions.firstIndex(where: { $0.id == session.id }) {
+            sessions[index] = session
+        }
+    }
+
     // MARK: - SSE Event Observation
 
     @ObservationIgnored private var eventToken: UUID?
@@ -263,6 +372,13 @@ final class DashboardViewModel {
 
         case .sessionStatus(let payload):
             statusMap[payload.sessionID] = payload.status
+
+        case .projectUpdated(let project):
+            if let index = projects.firstIndex(where: { $0.id == project.id }) {
+                projects[index] = project
+            } else {
+                projects.append(project)
+            }
 
         case .sessionIdle(let sessionID):
             statusMap[sessionID] = .idle

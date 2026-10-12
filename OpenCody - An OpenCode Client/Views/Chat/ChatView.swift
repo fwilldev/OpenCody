@@ -78,7 +78,7 @@ struct ChatView: View {
                 SessionQuestionDock(request: questionRequest, viewModel: viewModel)
             }
         }
-        .navigationTitle(session.title.isEmpty ? "Session" : session.title)
+        .navigationTitle(viewModel.session.title.isEmpty ? "Session" : viewModel.session.title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             if let utilitiesState {
@@ -102,7 +102,7 @@ struct ChatView: View {
 
                     if let client = connectionManager.activeAPIClient {
                         SessionActionsMenu(
-                            session: session,
+                            session: viewModel.session,
                             viewModel: viewModel,
                             apiClient: client
                         )

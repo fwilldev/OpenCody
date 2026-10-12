@@ -114,7 +114,7 @@ struct Project: Codable, Identifiable, Sendable {
     /// `"git"` when the project is a git repository, `nil` otherwise.
     let vcs: String?
     /// User-assigned display name.
-    let name: String?
+    var name: String?
     let icon: ProjectIcon?
     let commands: ProjectCommands?
     let time: ProjectTime
@@ -129,6 +129,12 @@ struct Project: Codable, Identifiable, Sendable {
 
     /// Whether the project is a git repository.
     var isGitRepository: Bool { vcs == "git" }
+
+    func renamed(_ name: String) -> Project {
+        var copy = self
+        copy.name = name
+        return copy
+    }
 }
 
 /// Project icon override. Maps to `Project.icon`.
