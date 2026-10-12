@@ -2,11 +2,17 @@
 
 # OpenCody
 
-OpenCody is a client for your own OpenCode instance. Connect to your OpenCode server and communicate with it with all the tools you need!
+**Download on the App Store:**
 
 <a href="https://apps.apple.com/us/app/opencody-an-opencode-client/id6760118911">
-  <img src="https://developer.apple.com/assets/elements/badges/download-on-the-app-store.svg" alt="Download on the App Store" height="48">
+  <img src="https://developer.apple.com/assets/elements/badges/download-on-the-app-store.svg" alt="Download on the App Store">
 </a>
+
+OpenCody is free and open-source. If you want to support OpenCody, leave a 5-Star Review on the App Store, contribute to the project or support me directly!
+
+<a href='https://ko-fi.com/J3G820LBTF' target='_blank'><img height='36' style='border:0px;height:36px;' src='https://storage.ko-fi.com/cdn/kofi3.png?v=6' border='0' alt='Buy Me a Coffee at ko-fi.com' /></a>
+
+OpenCody is a client for your own OpenCode instance. Connect to your OpenCode server and communicate with it with all the tools you need!
 
 An iPhone and iPad app for [OpenCode](https://opencode.ai). Point it at your OpenCode server (1.x or 2.x) and use your sessions from anywhere: chat with the agent, answer its questions and permission requests, browse files and diffs, and manage providers and MCP servers.
 
@@ -17,10 +23,6 @@ Open `OpenCody - An OpenCode Client.xcodeproj` in Xcode, pick your development t
 ## Contributing
 
 Issues and pull requests are welcome. The project is maintained, but only in my spare time, so replies and reviews can take a while.
-
-## Support
-
-If you like the app, you can buy me a coffee on [Ko-fi](https://ko-fi.com/fwilldev).
 
 ## License
 
