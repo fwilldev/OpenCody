@@ -300,10 +300,7 @@ struct ContextUsageView: View {
     // MARK: - Formatting
 
     private func formatNumber(_ n: Int) -> String {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal
-        formatter.groupingSeparator = ","
-        return formatter.string(from: NSNumber(value: n)) ?? "\(n)"
+        n.formatted(.number)
     }
 
     private func formatNumber(_ n: Int?) -> String {
@@ -312,21 +309,12 @@ struct ContextUsageView: View {
     }
 
     private func formatCost(_ cost: Double) -> String {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .currency
-        formatter.currencyCode = "USD"
-        formatter.minimumFractionDigits = 2
-        formatter.maximumFractionDigits = 6
-        return formatter.string(from: NSNumber(value: cost)) ?? "$\(cost)"
+        cost.formatted(.currency(code: "USD").precision(.fractionLength(2...6)))
     }
 
     private func formatTimestamp(_ ts: Double) -> String {
         guard ts > 0 else { return "—" }
-        let date = Date(timeIntervalSince1970: ts)
-        let formatter = DateFormatter()
-        formatter.dateStyle = .short
-        formatter.timeStyle = .medium
-        return formatter.string(from: date)
+        return ServerTime.date(ts).formatted(date: .numeric, time: .standard)
     }
 
     private func usageColor(_ usage: Int) -> Color {

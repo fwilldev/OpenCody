@@ -66,12 +66,6 @@ struct ProjectCardView: View {
 
     /// Format the most recent session update time as a relative string.
     private var relativeTime: String {
-        guard lastUpdated > 0 else { return "" }
-        let raw = lastUpdated
-        let seconds = raw > 1_000_000_000_000 ? raw / 1000 : raw
-        let date = Date(timeIntervalSince1970: seconds)
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .abbreviated
-        return formatter.localizedString(for: date, relativeTo: Date())
+        ServerTime.relative(lastUpdated)
     }
 }

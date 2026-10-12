@@ -145,12 +145,6 @@ struct SessionCardView: View {
 
     /// Format the session's last update time as a relative string.
     private var relativeTime: String {
-        // Guard against millisecond timestamps (values > year 3000 in seconds)
-        let raw = session.time.updated
-        let seconds = raw > 1_000_000_000_000 ? raw / 1000 : raw
-        let date = Date(timeIntervalSince1970: seconds)
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .abbreviated
-        return formatter.localizedString(for: date, relativeTo: Date())
+        ServerTime.relative(session.time.updated)
     }
 }

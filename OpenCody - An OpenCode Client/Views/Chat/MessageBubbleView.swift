@@ -64,15 +64,9 @@ struct MessageBubbleView: View {
 
 
     private var timestamp: String {
-        // Guard against millisecond timestamps (values > year 3000 in seconds)
-        let raw = createdAt
-        let seconds = raw > 1_000_000_000_000 ? raw / 1000 : raw
-        let date = Date(timeIntervalSince1970: seconds)
         // Fresh messages would render as "in 0 sec" due to clock skew — show "now".
-        if abs(date.timeIntervalSinceNow) < 60 { return "now" }
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .abbreviated
-        return formatter.localizedString(for: date, relativeTo: Date())
+        if abs(ServerTime.date(createdAt).timeIntervalSinceNow) < 60 { return "now" }
+        return ServerTime.relative(createdAt)
     }
 
     var body: some View {

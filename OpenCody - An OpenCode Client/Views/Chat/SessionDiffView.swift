@@ -164,9 +164,13 @@ private struct FileDiffSection: View {
 
 private struct DiffContentView: View {
     let diff: FileDiff
+    /// Renderable lines, parsed once from the server's unified-diff patch.
+    private let lines: [UnifiedDiff.Line]
 
-    /// Renderable lines parsed from the server's unified-diff patch.
-    private var lines: [UnifiedDiff.Line] { diff.parsedDiff.lines }
+    init(diff: FileDiff) {
+        self.diff = diff
+        self.lines = diff.parsedDiff.lines
+    }
 
     var body: some View {
         if lines.isEmpty {

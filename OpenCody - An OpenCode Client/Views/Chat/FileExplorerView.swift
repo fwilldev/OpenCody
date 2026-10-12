@@ -645,6 +645,8 @@ private struct FileContentView: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var content: FileContent? = nil
+    /// Counted once on load; splitting a large file per render is expensive.
+    @State private var lineCount = 0
     @State private var isLoading = true
     @State private var error: String? = nil
     @State private var didReference = false
@@ -746,31 +748,19 @@ private struct FileContentView: View {
                 }
             }
             .navigationTitle(fileName)
+            .navigationSubtitle(content.map { $0.type == .binary ? "Binary file" : "\(lineCount) lines" } ?? "")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Close") { dismiss() }
                         .foregroundStyle(Theme.Colors.silver)
                 }
-                ToolbarItem(placement: .primaryAction) {
-                    HStack(spacing: Theme.Spacing.md) {
-                        if let content, content.type != .binary {
-                            let lineCount = content.content.components(separatedBy: "\n").count
-                            Text("\(lineCount) lines")
-                                .font(.caption)
-                                .foregroundStyle(Theme.Colors.silver)
-                        }
-
-                        if let onReference {
-                            Button {
-                                onReference(filePath)
-                                didReference = true
-                                dismiss()
-                            } label: {
-                                Image(systemName: didReference ? "checkmark" : "at")
-                                    .foregroundStyle(Theme.Colors.cyberBlue)
-                            }
-                            .accessibilityLabel("Reference in message")
+                if let onReference {
+                    ToolbarItem(placement: .primaryAction) {
+                        Button("Reference in Message", systemImage: didReference ? "checkmark" : "at") {
+                            onReference(filePath)
+                            didReference = true
+                            dismiss()
                         }
                     }
                 }
@@ -787,9 +777,8 @@ private struct FileContentView: View {
         ScrollView([.horizontal, .vertical]) {
             HStack(alignment: .top, spacing: 0) {
                 // Line numbers column
-                let lines = content.content.components(separatedBy: "\n")
-                VStack(alignment: .trailing, spacing: 0) {
-                    ForEach(0..<lines.count, id: \.self) { index in
+                LazyVStack(alignment: .trailing, spacing: 0) {
+                    ForEach(0..<lineCount, id: \.self) { index in
                         Text("\(index + 1)")
                             .font(.system(size: 12, design: .monospaced))
                             .foregroundStyle(Theme.Colors.smoke)
@@ -886,7 +875,9 @@ private struct FileContentView: View {
         error = nil
         do {
             let api = FileAPI(client: apiClient)
-            content = try await api.content(path: filePath, directory: directory)
+            let loaded = try await api.content(path: filePath, directory: directory)
+            lineCount = loaded.content.reduce(1) { $1 == "\n" ? $0 + 1 : $0 }
+            content = loaded
         } catch {
             self.error = error.localizedDescription
         }
