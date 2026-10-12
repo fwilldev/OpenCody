@@ -121,6 +121,8 @@ final class V2ServerUITests: XCTestCase {
         let nameField = app.alerts.textFields.firstMatch
         XCTAssertTrue(nameField.waitForExistence(timeout: 5))
         nameField.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 60) + "UITest Project")
+        // A tap sent while the keyboard is still settling after typeText is dropped.
+        sleep(2)
         app.alerts.buttons["Save"].tap()
         let renamed = app.staticTexts["UITest Project"].firstMatch
         XCTAssertTrue(renamed.waitForExistence(timeout: 10), "renamed project shown")
