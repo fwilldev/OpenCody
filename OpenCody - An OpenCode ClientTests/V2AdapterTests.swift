@@ -231,7 +231,7 @@ final class V2AdapterTests: XCTestCase {
             #"{"id":"evt_7","type":"session.tool.called","created":8,"data":{\#(s),"id":"call_1","input":{"path":"a"},"executed":true}}"#,
             #"{"id":"evt_8","type":"session.tool.success","created":9,"data":{\#(s),"id":"call_1","content":[{"type":"text","text":"file body"}],"executed":true}}"#,
             #"{"id":"evt_9","type":"session.step.ended","created":10,"data":{\#(s),"finish":"stop","cost":0.2,"tokens":{"input":1,"output":2,"reasoning":0,"cache":{"read":0,"write":0}}}}"#,
-            #"{"id":"evt_a","type":"session.status","created":11,"data":{"sessionID":"ses_1","status":{"type":"idle"}}}"#,
+            #"{"id":"evt_a","type":"session.retry.scheduled","created":11,"data":{\#(s),"attempt":2,"at":99,"error":{"message":"rate limited"}}}"#,
         ])
 
         // User message and its text part.
@@ -263,14 +263,18 @@ final class V2AdapterTests: XCTestCase {
         XCTAssertEqual(state.output, "file body")
         XCTAssertEqual(state.input?["path"]?.asString, "a")
 
-        // Step end completes the message; status passes through.
+        // Step end completes the message; a scheduled retry is v1's `retry` status.
         guard case .messageUpdated(.assistant(let finished)) = events[9] else { return XCTFail("Expected assistant") }
         XCTAssertEqual(finished.time.completed, 10)
         XCTAssertEqual(finished.finish, "stop")
         XCTAssertEqual(finished.cost, 0.2)
-        guard case .sessionStatus(let status) = events[10], case .idle = status.status else {
-            return XCTFail("Expected idle status")
+        guard case .sessionStatus(let status) = events[10],
+              case .retry(let attempt, let message, let next) = status.status else {
+            return XCTFail("Expected retry status")
         }
+        XCTAssertEqual(attempt, 2)
+        XCTAssertEqual(message, "rate limited")
+        XCTAssertEqual(next, 99)
     }
 
     func testFormAndPermissionEvents() async throws {

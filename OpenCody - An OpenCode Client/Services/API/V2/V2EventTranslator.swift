@@ -68,19 +68,22 @@ actor V2EventTranslator {
         // MARK: Connection & status
         case "server.connected":
             emit("server.connected", [:])
-        case "global.disposed":
-            emit("global.disposed", [:])
-        case "session.status":
-            emit("session.status", payload)
-        case "session.idle":
-            emit("session.idle", payload)
+        case "session.retry.scheduled":
+            // v1 reported retries as a `session.status` of type `retry`.
+            let error = payload["error"]
+            let message = (error as? JSON)?["message"] as? String ?? error as? String ?? ""
+            emit("session.status", ["sessionID": sessionID, "status": [
+                "type": "retry", "attempt": payload["attempt"] ?? 0, "message": message, "next": payload["at"] ?? 0,
+            ] as JSON])
 
         // MARK: Session records
         case "session.created":
             if let session = await fetchSession(sessionID) { emit("session.created", ["info": session]) }
         case "session.renamed", "session.moved", "session.metadata.updated", "session.forked",
              "session.revert.staged", "session.revert.cleared", "session.revert.committed",
-             "session.agent.selected", "session.model.selected":
+             "session.agent.selected", "session.model.selected",
+             // Live cost and token totals while a run is going.
+             "session.usage.updated":
             if let session = await fetchSession(sessionID) { emit("session.updated", ["info": session]) }
         // 2.x publishes no `session.status` of its own; a run's lifecycle is the
         // `session.execution.*` family, which v1 clients read as busy → idle.
@@ -98,6 +101,7 @@ actor V2EventTranslator {
             emit("session.deleted", ["info": session])
         case "session.compaction.ended":
             emit("session.compacted", ["sessionID": sessionID])
+            if let session = await fetchSession(sessionID) { emit("session.updated", ["info": session]) }
 
         // MARK: User messages
         case "session.inbox.enqueued":
@@ -302,7 +306,7 @@ actor V2EventTranslator {
             emit("vcs.branch.updated", payload)
         case "filesystem.changed":
             emit("file.watcher.updated", payload)
-        case "mcp.tools.changed", "mcp.status.changed":
+        case "mcp.status.changed":
             emit("mcp.tools.changed", ["server": payload["server"] ?? ""])
         case "location.shutdown":
             emit("server.instance.disposed", ["directory": directory ?? ""])

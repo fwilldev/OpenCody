@@ -15,17 +15,24 @@ extension SessionAPI {
         return try V2Adapter.decode([Session].self, from: list.map(V2Adapter.session))
     }
 
-    func v2List(roots: Bool, limit: Int, start: Int?, search: String?) async throws -> [Session] {
-        // 2.x pages by cursor, not offset: ask for the whole window and drop the head.
-        let offset = max(0, start ?? 0)
-        var items = [
-            URLQueryItem(name: "limit", value: String(limit + offset)),
-            URLQueryItem(name: "order", value: "desc"),
-        ]
+    func v2Page(roots: Bool, limit: Int, cursor: String?, search: String?) async throws -> Page {
+        var items = [URLQueryItem(name: "limit", value: String(limit))]
+        if let cursor {
+            // The cursor carries the order; the server rejects both together.
+            items.append(URLQueryItem(name: "cursor", value: cursor))
+        } else {
+            items.append(URLQueryItem(name: "order", value: "desc"))
+        }
         if let directory, !directory.isEmpty { items.append(URLQueryItem(name: "directory", value: directory)) }
         if roots { items.append(URLQueryItem(name: "parentID", value: "null")) }
         if let search, !search.isEmpty { items.append(URLQueryItem(name: "search", value: search)) }
-        return Array(try await v2Sessions(items).dropFirst(offset))
+
+        let body = try await client.v2JSON(.get("/api/session", queryItems: items)) as? JSON ?? [:]
+        let list = body["data"] as? [JSON] ?? []
+        let sessions = try V2Adapter.decode([Session].self, from: list.map(V2Adapter.session))
+        // `cursor.next` is not reliably null on the last page; a short page ends it.
+        let next = list.count < limit ? nil : (body["cursor"] as? JSON)?["next"] as? String
+        return Page(sessions: sessions, next: next)
     }
 
     func v2ListGlobal(roots: Bool, limit: Int, search: String?, archived: Bool) async throws -> [GlobalSession] {
@@ -104,7 +111,7 @@ extension SessionAPI {
     }
 
     func v2Children(id: String) async throws -> [Session] {
-        try await v2Sessions([URLQueryItem(name: "parentID", value: id)])
+        try await v2Sessions([URLQueryItem(name: "parentID", value: id), URLQueryItem(name: "limit", value: "500")])
     }
 
     func v2Abort(id: String) async throws {

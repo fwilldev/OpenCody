@@ -3,8 +3,8 @@ import Foundation
 // MARK: - AgentAPI (OpenCode 2.x)
 
 extension AgentAPI {
-    func v2List() async throws -> [Agent] {
-        let data = try await client.v2Data(.get("/api/agent"))
+    func v2List(directory: String?) async throws -> [Agent] {
+        let data = try await client.v2Data(.get("/api/agent", queryItems: APIEndpoint.v2Location(directory)))
         let agents = (data as? [V2Adapter.JSON] ?? []).map(V2Adapter.agent)
         return try V2Adapter.decode([Agent].self, from: agents)
     }

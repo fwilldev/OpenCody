@@ -11,6 +11,8 @@ struct SessionActionsMenu: View {
     let session: Session
     let viewModel: ChatViewModel
     let apiClient: APIClient
+    /// Whether Diff, Todos and Files belong in this menu (no utilities panel beside the chat).
+    var showsUtilityItems = true
 
     @State private var showDiff = false
     @State private var showTodos = false
@@ -18,8 +20,6 @@ struct SessionActionsMenu: View {
     @State private var isSummarizing = false
     @State private var actionError: String? = nil
     @State private var successMessage: String? = nil
-    @State private var showForkAlert = false
-    @State private var forkedSessionID: String? = nil
     @State private var showFileExplorer = false
     @State private var showContextUsage = false
     @State private var renamingSession: Session?
@@ -48,7 +48,7 @@ struct SessionActionsMenu: View {
 
             // Fork
             Button {
-                Task { await forkSession() }
+                Task { await viewModel.fork(through: nil) }
             } label: {
                 Label("Fork Session", systemImage: "arrow.branch")
             }
@@ -63,8 +63,7 @@ struct SessionActionsMenu: View {
 
             Divider()
 
-            // Diff / Todos / File Explorer are shown in the iPad utilities panel
-            if UIDevice.current.userInterfaceIdiom != .pad {
+            if showsUtilityItems {
                 Button {
                     showDiff = true
                 } label: {
@@ -158,24 +157,12 @@ struct SessionActionsMenu: View {
         .sheet(isPresented: $showSummary) {
             SessionSummaryView(sessionTitle: session.title)
         }
-        .alert("Action Error", isPresented: .constant(actionError != nil)) {
+        .alert("Action Error", isPresented: Binding(get: { actionError != nil }, set: { if !$0 { actionError = nil } })) {
             Button("OK") { actionError = nil }
         } message: {
             Text(actionError ?? "")
         }
-        .alert("Session Forked", isPresented: $showForkAlert) {
-            Button("Copy ID") {
-                if let id = forkedSessionID {
-                    UIPasteboard.general.string = id
-                }
-            }
-            Button("OK", role: .cancel) {}
-        } message: {
-            if let id = forkedSessionID {
-                Text("New session created:\n\(id.prefix(16))…")
-            }
-        }
-        .alert("Done", isPresented: .constant(successMessage != nil)) {
+        .alert("Done", isPresented: Binding(get: { successMessage != nil }, set: { if !$0 { successMessage = nil } })) {
             Button("OK") { successMessage = nil }
         } message: {
             Text(successMessage ?? "")
@@ -183,19 +170,6 @@ struct SessionActionsMenu: View {
     }
 
     // MARK: - Actions
-
-    private func forkSession() async {
-        do {
-            let api = SessionAPI(client: apiClient, directory: session.directory)
-            let forked = try await api.fork(id: session.id)
-            await MainActor.run {
-                forkedSessionID = forked.id
-                showForkAlert = true
-            }
-        } catch {
-            actionError = error.localizedDescription
-        }
-    }
 
     private func summarizeSession() async {
         guard let providerID = viewModel.selectedProviderID,

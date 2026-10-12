@@ -263,8 +263,8 @@ struct AgentModelPicker: View {
         isLoadingLists = true
         defer { isLoadingLists = false }
 
-        async let agentFetch = AgentAPI(client: client).list()
-        async let providerFetch = ProviderAPI(client: client).list()
+        async let agentFetch = AgentAPI(client: client).list(directory: viewModel.session.directory)
+        async let providerFetch = ProviderAPI(client: client).list(directory: viewModel.session.directory)
 
         agents = (try? await agentFetch) ?? []
         let response = (try? await providerFetch) ?? ProviderAPI.ProviderListResponse(all: [], default: [:], connected: [])

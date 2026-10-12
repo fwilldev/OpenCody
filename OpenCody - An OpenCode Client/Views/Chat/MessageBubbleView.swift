@@ -159,6 +159,11 @@ struct MessageBubbleView: View {
                     Label("Copy", systemImage: "doc.on.doc")
                 }
             }
+            if !isLocalPending {
+                Button("Fork from Here", systemImage: "arrow.branch") {
+                    Task { await viewModel.fork(through: messageWithParts.message.id) }
+                }
+            }
         }
     }
 }

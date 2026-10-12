@@ -25,14 +25,18 @@ struct ProjectSessionsView: View {
     @State private var projectSessions: [Session] = []
     @State private var localStatusMap: [String: SessionStatus] = [:]
     @State private var isLoading = true
+    @State private var isLoadingMore = false
     @State private var loadError: String? = nil
     @State private var eventToken: UUID? = nil
     @State private var refreshToken: UUID? = nil
-    @State private var displayLimit: Int = 5
-    @State private var hasMore: Bool = false
+    /// Cursor of the next page; `nil` when everything is loaded.
+    @State private var nextCursor: String?
+    @State private var searchText = ""
     @State private var showArchived: Bool = false
     @State private var renamingSession: Session?
     @State private var deletingSession: Session?
+
+    private let pageSize = 20
 
     /// OpenCode 2.x cannot archive sessions, so its archive controls are hidden.
     private var supportsArchiving: Bool {
@@ -54,92 +58,71 @@ struct ProjectSessionsView: View {
             Theme.Colors.deepBlack
                 .ignoresSafeArea()
 
-            if isLoading && projectSessions.isEmpty {
-                ProgressView("Loading sessions…")
-                    .tint(Theme.Colors.cyberBlue)
-                    .foregroundStyle(Theme.Colors.silver)
-            } else if visibleSessions.isEmpty {
-                EmptyStateView(
-                    systemImage: "rectangle.stack",
-                    title: "No Sessions",
-                    message: showArchived
-                        ? "This project has no sessions yet."
-                        : "No active sessions. Tap the archive filter to see archived ones."
-                )
-            } else {
-                ScrollView {
-                    LazyVStack(spacing: Theme.Spacing.sm) {
+            ScrollView {
+                LazyVStack(spacing: Theme.Spacing.sm) {
+                    if isLoading && projectSessions.isEmpty {
+                        ForEach(0..<4, id: \.self) { _ in SkeletonCard() }
+                            .accessibilityHidden(true)
+                    } else if let loadError, projectSessions.isEmpty {
+                        EmptyStateView(
+                            systemImage: "wifi.exclamationmark",
+                            title: "Couldn't Load Sessions",
+                            message: loadError,
+                            action: { Task { await reload() } },
+                            actionLabel: "Try Again"
+                        )
+                    } else if visibleSessions.isEmpty {
+                        emptyState
+                    } else {
                         ForEach(visibleSessions) { session in
                             sessionRow(session)
+                                .transition(.opacity)
                         }
 
-                        // Show More button
-                        if hasMore {
+                        if nextCursor != nil {
                             Button {
-                                Task {
-                                    await loadMoreSessions()
-                                }
+                                Task { await loadMoreSessions() }
                             } label: {
-                                HStack(spacing: Theme.Spacing.xs) {
-                                    Text("Show More")
-                                        .font(Theme.Fonts.bodyBold)
-                                    Image(systemName: "chevron.down")
-                                        .font(.system(size: 12, weight: .semibold))
+                                if isLoadingMore {
+                                    ProgressView()
+                                        .frame(maxWidth: .infinity)
+                                } else {
+                                    Label("Show More", systemImage: "chevron.down")
+                                        .frame(maxWidth: .infinity)
                                 }
-                                .foregroundStyle(Theme.Colors.cyberBlue)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, Theme.Spacing.sm)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 12)
-                                        .fill(Theme.Colors.cyberBlue.opacity(0.1))
-                                        .overlay(
-                                            RoundedRectangle(cornerRadius: 12)
-                                                .stroke(Theme.Colors.cyberBlue.opacity(0.3), lineWidth: 1)
-                                        )
-                                )
                             }
-                            .buttonStyle(.plain)
+                            .secondaryButton()
+                            .disabled(isLoadingMore)
                         }
                     }
-                    .padding(.horizontal, Theme.Spacing.md)
-                    .padding(.vertical, Theme.Spacing.sm)
                 }
+                .padding(.horizontal, Theme.Spacing.md)
+                .padding(.vertical, Theme.Spacing.sm)
+                .animation(.default, value: visibleSessions.map(\.id))
             }
+            .refreshable { await reload() }
 
-            if let loadError {
+            if let loadError, !projectSessions.isEmpty {
                 ErrorBanner(error: .network(loadError), onDismiss: { self.loadError = nil })
                     .padding(.horizontal, Theme.Spacing.md)
                     .padding(.top, Theme.Spacing.xs)
             }
         }
         .navigationTitle(projectPath.map(viewModel.projectName(for:)) ?? projectName)
+        .searchable(text: $searchText, prompt: "Search sessions")
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                HStack(spacing: Theme.Spacing.sm) {
-                    if supportsArchiving {
-                        Button {
-                            showArchived.toggle()
-                        } label: {
-                            Image(systemName: showArchived ? "archivebox.fill" : "archivebox")
-                                .foregroundStyle(showArchived ? Theme.Colors.hotPink : Theme.Colors.silver)
-                        }
-                    }
-
-                    Button {
-                        showCreateSheet = true
-                    } label: {
-                        Image(systemName: "plus")
-                            .foregroundStyle(Theme.Colors.cyberBlue)
-                    }
+            ToolbarItemGroup(placement: .primaryAction) {
+                if supportsArchiving {
+                    Toggle("Show Archived", systemImage: showArchived ? "archivebox.fill" : "archivebox", isOn: $showArchived)
+                        .toggleStyle(.button)
                 }
-            }
 
-            ToolbarItem(placement: .primaryAction) {
-                RefreshButton {
-                    displayLimit = 5
-                    await loadProjectSessions()
-                    await loadStatuses()
+                RefreshButton { await reload() }
+
+                Button("New Session", systemImage: "plus") {
+                    showCreateSheet = true
                 }
+                .keyboardShortcut("n", modifiers: .command)
             }
         }
         .sheet(isPresented: $showCreateSheet) {
@@ -169,10 +152,7 @@ struct ProjectSessionsView: View {
             presenting: deletingSession
         ) { session in
             Button("Delete Session", role: .destructive) {
-                Task {
-                    try? await viewModel.deleteSession(id: session.id)
-                    withAnimation { projectSessions.removeAll { $0.id == session.id } }
-                }
+                Task { await delete(session) }
             }
         } message: { session in
             Text("“\(session.title.isEmpty ? "Untitled Session" : session.title)” and its messages will be removed from the server.")
@@ -182,39 +162,63 @@ struct ProjectSessionsView: View {
             localStatusMap = initialStatusMap
             projectSessions = []
             isLoading = true
-            loadError = nil
-            displayLimit = 5
-            hasMore = false
-            await loadProjectSessions()
-            await loadStatuses()
+            await reload()
             startObservingEvents()
+        }
+        .task(id: searchText) {
+            guard !isLoading || !projectSessions.isEmpty else { return }
+            try? await Task.sleep(for: .milliseconds(300))
+            guard !Task.isCancelled else { return }
+            await loadProjectSessions()
         }
         .onDisappear {
             stopObservingEvents()
         }
     }
 
+    @ViewBuilder
+    private var emptyState: some View {
+        if !searchText.isEmpty {
+            ContentUnavailableView.search(text: searchText)
+        } else {
+            EmptyStateView(
+                systemImage: "rectangle.stack",
+                title: "No Sessions",
+                message: showArchived || !supportsArchiving
+                    ? "This project has no sessions yet."
+                    : "No active sessions. Use the archive button to see archived ones.",
+                action: { showCreateSheet = true },
+                actionLabel: "New Session"
+            )
+        }
+    }
+
     // MARK: - Data Loading
 
+    private var directory: String? {
+        projectPath.map { $0.hasPrefix("/") ? $0 : "/\($0)" }
+    }
+
+    private func reload() async {
+        await loadProjectSessions()
+        await loadStatuses()
+    }
+
+    /// Load the first page, replacing what is shown.
     private func loadProjectSessions() async {
-        guard let client = connectionManager.activeAPIClient,
-              let rawPath = projectPath else {
+        guard let client = connectionManager.activeAPIClient, let directory else {
             isLoading = false
             return
         }
-
-        let directory = rawPath.hasPrefix("/") ? rawPath : "/\(rawPath)"
 
         isLoading = true
         loadError = nil
 
         do {
-            let api = SessionAPI(client: client, directory: directory)
-            // Fetch one extra to detect if there are more sessions beyond the display limit.
-            let fetched = try await api.list(roots: true, limit: displayLimit + 1)
-            hasMore = fetched.count > displayLimit
-            let limited = hasMore ? Array(fetched.prefix(displayLimit)) : fetched
-            projectSessions = limited.sorted { $0.time.updated > $1.time.updated }
+            let page = try await SessionAPI(client: client, directory: directory)
+                .page(limit: pageSize, search: searchText)
+            projectSessions = page.sessions
+            nextCursor = page.next
         } catch is CancellationError {
             return
         } catch let urlError as URLError where urlError.code == .cancelled {
@@ -226,10 +230,29 @@ struct ProjectSessionsView: View {
         isLoading = false
     }
 
-    /// Load more sessions by increasing the display limit.
+    /// Append the next page.
     private func loadMoreSessions() async {
-        displayLimit += 5
-        await loadProjectSessions()
+        guard let client = connectionManager.activeAPIClient, let directory, let cursor = nextCursor else { return }
+        isLoadingMore = true
+        defer { isLoadingMore = false }
+        do {
+            let page = try await SessionAPI(client: client, directory: directory)
+                .page(limit: pageSize, cursor: cursor, search: searchText)
+            let known = Set(projectSessions.map(\.id))
+            projectSessions += page.sessions.filter { !known.contains($0.id) }
+            nextCursor = page.next
+        } catch {
+            loadError = error.localizedDescription
+        }
+    }
+
+    private func delete(_ session: Session) async {
+        do {
+            try await viewModel.deleteSession(id: session.id)
+            withAnimation { projectSessions.removeAll { $0.id == session.id } }
+        } catch {
+            loadError = "Couldn't delete the session: \(error.localizedDescription)"
+        }
     }
 
     private func loadStatuses() async {
@@ -314,6 +337,7 @@ struct ProjectSessionsView: View {
             )
         }
         .buttonStyle(.plain)
+        .hoverEffect(.highlight)
         .contextMenu {
             Button("Rename Session", systemImage: "pencil") {
                 renamingSession = session

@@ -172,27 +172,43 @@ struct SessionAPI: Sendable {
 
     // MARK: - Listing
 
-    /// List sessions (optionally filtered by directory).
+    /// List sessions (optionally filtered by directory), newest first.
     /// - Parameters:
-    ///   - directory: Only return sessions for this project directory.
     ///   - roots: When `true`, return root sessions with aggregated summary data.
     ///   - limit: Maximum number of sessions to return.
-    ///   - start: Pagination offset — skip this many sessions before returning results.
-    ///   - search: Free-text filter applied server-side.
+    ///   - search: Free-text title filter applied server-side.
     func list(
         roots: Bool = true,
         limit: Int = 100,
-        start: Int? = nil,
         search: String? = nil
     ) async throws -> [Session] {
-        if client.apiVersion == .v2 { return try await v2List(roots: roots, limit: limit, start: start, search: search) }
+        if client.apiVersion == .v2 { return try await v2Page(roots: roots, limit: limit, cursor: nil, search: search).sessions }
         var extra: [URLQueryItem] = []
         if roots { extra.append(URLQueryItem(name: "roots", value: "true")) }
         extra.append(URLQueryItem(name: "limit", value: String(limit)))
-        if let start { extra.append(URLQueryItem(name: "start", value: String(start))) }
         if let search, !search.isEmpty { extra.append(URLQueryItem(name: "search", value: search)) }
         let data = try await client.requestData(.get("/session", queryItems: query(extra)))
         return try JSONDecoder().decode([Session].self, from: data)
+    }
+
+    /// One page of sessions, newest first, and the cursor of the next page (`nil` at the end).
+    struct Page: Sendable {
+        let sessions: [Session]
+        let next: String?
+    }
+
+    /// Page through sessions with an opaque cursor.
+    ///
+    /// 2.x pages natively (`cursor.next`). v1 has no offset (`start` filters by
+    /// update time), so its cursor is the count already shown and each page refetches
+    /// the head. ponytail: fine for the tens of sessions a project page shows.
+    func page(roots: Bool = true, limit: Int, cursor: String? = nil, search: String? = nil) async throws -> Page {
+        if client.apiVersion == .v2 { return try await v2Page(roots: roots, limit: limit, cursor: cursor, search: search) }
+        let offset = cursor.flatMap(Int.init) ?? 0
+        let fetched = try await list(roots: roots, limit: offset + limit + 1, search: search)
+            .sorted { $0.time.updated > $1.time.updated }
+        let page = Array(fetched.dropFirst(offset).prefix(limit))
+        return Page(sessions: page, next: fetched.count > offset + limit ? String(offset + limit) : nil)
     }
 
     /// List sessions across every known project.

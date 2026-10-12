@@ -104,7 +104,8 @@ struct ChatView: View {
                         SessionActionsMenu(
                             session: viewModel.session,
                             viewModel: viewModel,
-                            apiClient: client
+                            apiClient: client,
+                            showsUtilityItems: utilitiesState == nil
                         )
                     } else {
                         Image(systemName: "ellipsis")
@@ -123,7 +124,10 @@ struct ChatView: View {
         .onDisappear {
             viewModel.stopObservingEvents()
         }
-        .toolbar(.hidden, for: .tabBar)
+        .toolbarVisibility(.hidden, for: .tabBar)
+        .navigationDestination(item: $viewModel.forkedSession) { forked in
+            ChatView(session: forked, connectionManager: connectionManager)
+        }
     }
 
     // MARK: - Message List

@@ -62,6 +62,8 @@ final class ChatViewModel {
     var pendingPermission: Permission? = nil
     var pendingQuestionRequestIDs: Set<String> = []
     var error: String? = nil
+    /// A session just forked from this one; the chat navigates to it.
+    var forkedSession: Session?
 
     /// Server-reported session status. Updated from SSE events and REST polling.
     /// Drives `isGenerating` reactively instead of manual toggling.
@@ -464,6 +466,23 @@ final class ChatViewModel {
         }
     }
 
+    /// Fork the session into a new one that keeps the history up to and including
+    /// `messageID` (`nil`: everything), then open it.
+    func fork(through messageID: String?) async {
+        guard let client = connectionManager.activeAPIClient else { return }
+        // The server copies everything *before* a message, so pass the next one.
+        let before = messageID.flatMap { id in
+            messages.firstIndex { $0.message.id == id }
+                .flatMap { messages.indices.contains($0 + 1) ? messages[$0 + 1].message.id : nil }
+        }
+        do {
+            forkedSession = try await SessionAPI(client: client, directory: session.directory)
+                .fork(id: session.id, messageID: before)
+        } catch {
+            self.error = "Couldn't fork the session: \(error.localizedDescription)"
+        }
+    }
+
     /// Abort the currently running generation for this session.
     func abort() async throws {
         guard let client = connectionManager.activeAPIClient else {
@@ -618,7 +637,7 @@ final class ChatViewModel {
     /// This ensures the picker always reflects the server-side defaults for a new session.
     private func loadDefaultsFromServer(client: APIClient) async {
         async let configFetch = ConfigAPI(client: client).get()
-        async let providerFetch = ProviderAPI(client: client).list()
+        async let providerFetch = ProviderAPI(client: client).list(directory: session.directory)
 
         let config = try? await configFetch
         let providerResponse = try? await providerFetch
@@ -651,7 +670,7 @@ final class ChatViewModel {
         // only if no agent was already set from message history.
         // We leave selectedAgentID = nil when we can't determine a meaningful default,
         // because nil = "Default Agent" (server picks) which is always correct.
-        if selectedAgentID == nil, let agents = try? await AgentAPI(client: client).list() {
+        if selectedAgentID == nil, let agents = try? await AgentAPI(client: client).list(directory: session.directory) {
             // Prefer the agent configured as 'primary' mode; fall back to "coder".
             let primary = agents.first { $0.mode == AgentMode.primary }
             let coder = agents.first { $0.name == "coder" }
