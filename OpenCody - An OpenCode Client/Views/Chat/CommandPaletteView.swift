@@ -40,13 +40,13 @@ struct CommandPaletteView: View {
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(Theme.Colors.electricPurple)
                 Spacer()
-                Button {
-                    onDismiss()
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.caption2)
-                        .foregroundStyle(Theme.Colors.silver)
-                }
+                Button("Close", systemImage: "xmark", action: onDismiss)
+                    .labelStyle(.iconOnly)
+                    .font(.caption)
+                    .foregroundStyle(Theme.Colors.silver)
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(.rect)
+                    .keyboardShortcut(.cancelAction)
             }
             .padding(.horizontal, Theme.Spacing.md)
             .padding(.vertical, 8)
@@ -149,10 +149,7 @@ private struct CommandRow: View {
         Button(action: onTap) {
             HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.sm) {
                 // Command name with matched portion highlighted
-                Text("/")
-                    .font(.system(.body, design: .monospaced).weight(.semibold))
-                    .foregroundStyle(Theme.Colors.electricPurple)
-                + Text(command.name)
+                Text("\(Text("/").foregroundStyle(Theme.Colors.electricPurple))\(command.name)")
                     .font(.system(.body, design: .monospaced).weight(.semibold))
                     .foregroundStyle(Theme.Colors.cloud)
 

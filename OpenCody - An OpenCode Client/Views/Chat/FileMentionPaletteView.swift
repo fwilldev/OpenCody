@@ -35,13 +35,13 @@ struct FileMentionPaletteView: View {
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(Theme.Colors.neonOrange)
                 Spacer()
-                Button {
-                    onDismiss()
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.caption2)
-                        .foregroundStyle(Theme.Colors.silver)
-                }
+                Button("Close", systemImage: "xmark", action: onDismiss)
+                    .labelStyle(.iconOnly)
+                    .font(.caption)
+                    .foregroundStyle(Theme.Colors.silver)
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(.rect)
+                    .keyboardShortcut(.cancelAction)
             }
             .padding(.horizontal, Theme.Spacing.md)
             .padding(.vertical, 8)
@@ -185,11 +185,8 @@ private struct FileResultRow: View {
                             .font(.system(.subheadline, design: .monospaced).weight(.semibold))
                             .foregroundStyle(Theme.Colors.cloud)
                     } else {
-                        Text(directoryPath)
+                        Text("\(Text(directoryPath).foregroundStyle(Theme.Colors.silver))\(Text(fileName).fontWeight(.semibold))")
                             .font(.system(.subheadline, design: .monospaced))
-                            .foregroundStyle(Theme.Colors.silver)
-                        + Text(fileName)
-                            .font(.system(.subheadline, design: .monospaced).weight(.semibold))
                             .foregroundStyle(Theme.Colors.cloud)
                     }
                 }

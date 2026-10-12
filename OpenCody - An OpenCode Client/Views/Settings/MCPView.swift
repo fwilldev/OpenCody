@@ -60,12 +60,9 @@ struct MCPView: View {
         .navigationTitle("MCP Servers")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Button {
+            ToolbarItem(placement: .primaryAction) {
+                Button("Add Server", systemImage: "plus") {
                     editing = .create
-                } label: {
-                    Image(systemName: "plus")
-                        .foregroundStyle(Theme.Colors.cyberBlue)
                 }
             }
         }

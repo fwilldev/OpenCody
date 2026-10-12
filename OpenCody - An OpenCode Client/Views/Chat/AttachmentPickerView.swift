@@ -143,7 +143,7 @@ private struct AttachmentThumbnail: View {
                         .font(.title3)
                         .foregroundStyle(Theme.Colors.cyberBlue)
                     Text(attachment.filename)
-                        .font(.system(size: 9))
+                        .font(.caption2)
                         .lineLimit(2)
                         .multilineTextAlignment(.center)
                         .foregroundStyle(Theme.Colors.silver)
@@ -163,8 +163,12 @@ private struct AttachmentThumbnail: View {
                             .fill(Theme.Colors.carbon)
                             .frame(width: 14, height: 14)
                     )
+                    // 44 pt target without moving the badge.
+                    .padding(14)
+                    .contentShape(.rect)
             }
-            .offset(x: 6, y: -6)
+            .accessibilityLabel("Remove \(attachment.filename)")
+            .offset(x: 20, y: -20)
         }
         .frame(width: 64, height: 64)
         .overlay(
