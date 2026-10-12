@@ -417,22 +417,26 @@ private struct iPadChatUtilitiesContainer: View {
     }
 
     var body: some View {
-        // A native inspector resizes the chat beside it instead of covering the input.
-        ChatView(
-            session: session,
-            connectionManager: connectionManager,
-            viewModel: viewModel,
-            utilitiesState: iPadUtilitiesState(isOpen: $isUtilitiesOpen, selectedTab: $selectedTab)
-        )
-        .inspector(isPresented: $isUtilitiesOpen) {
-            if let client = connectionManager.activeAPIClient {
+        // Side by side, so the panel narrows the chat instead of covering its input.
+        // (`.inspector` overlays here, inside the split view's detail stack.)
+        HStack(spacing: 0) {
+            ChatView(
+                session: session,
+                connectionManager: connectionManager,
+                viewModel: viewModel,
+                utilitiesState: iPadUtilitiesState(isOpen: $isUtilitiesOpen, selectedTab: $selectedTab)
+            )
+
+            if isUtilitiesOpen, let client = connectionManager.activeAPIClient {
+                Divider()
                 iPadUtilitiesPanel(
                     session: session,
                     apiClient: client,
                     viewModel: viewModel,
                     selectedTab: $selectedTab
                 )
-                .inspectorColumnWidth(min: 300, ideal: 380, max: 520)
+                .frame(width: 360)
+                .transition(.move(edge: .trailing))
             }
         }
     }
