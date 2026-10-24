@@ -1,6 +1,6 @@
 import Foundation
 
-/// Sessions sharing one project directory, as listed on the dashboard and iPad sidebar.
+/// Sessions sharing one project directory, as listed on the dashboard and in the sidebar.
 struct ProjectGroup: Identifiable {
     let directory: String
     /// Custom name if one is set, else the folder name.

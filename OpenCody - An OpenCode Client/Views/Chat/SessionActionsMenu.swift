@@ -14,13 +14,10 @@ struct SessionActionsMenu: View {
     /// Whether Diff, Todos and Files belong in this menu (no utilities panel beside the chat).
     var showsUtilityItems = true
 
-    @State private var showDiff = false
-    @State private var showTodos = false
     @State private var showSummary = false
     @State private var isSummarizing = false
     @State private var actionError: String? = nil
     @State private var successMessage: String? = nil
-    @State private var showFileExplorer = false
     @State private var showContextUsage = false
     @State private var renamingSession: Session?
     @State private var confirmRevert = false
@@ -64,23 +61,9 @@ struct SessionActionsMenu: View {
             Divider()
 
             if showsUtilityItems {
-                Button {
-                    showDiff = true
-                } label: {
-                    Label("View Diff", systemImage: "list.bullet.rectangle")
-                }
-
-                Button {
-                    showTodos = true
-                } label: {
-                    Label("Todos", systemImage: "checkmark.circle")
-                }
-
-                Button {
-                    showFileExplorer = true
-                } label: {
-                    Label("File Explorer", systemImage: "folder")
-                }
+                Button("View Diff", systemImage: "list.bullet.rectangle") { open(.diff) }
+                Button("Todos", systemImage: "checkmark.circle") { open(.todos) }
+                Button("File Explorer", systemImage: "folder") { open(.files) }
             }
 
             Divider()
@@ -135,21 +118,6 @@ struct SessionActionsMenu: View {
             currentName: { $0.title },
             onSave: { _, title in Task { await viewModel.renameSession(to: title) } }
         )
-        .sheet(isPresented: $showDiff) {
-            SessionDiffView(session: session, apiClient: apiClient)
-        }
-        .sheet(isPresented: $showTodos) {
-            TodoListView(session: session, apiClient: apiClient, viewModel: viewModel)
-        }
-        .sheet(isPresented: $showFileExplorer) {
-            FileExplorerView(
-                session: session,
-                apiClient: apiClient,
-                onReference: { path in
-                    viewModel.referenceFile(path: path)
-                }
-            )
-        }
         .sheet(isPresented: $showContextUsage) {
             ContextUsageView(session: session, viewModel: viewModel, apiClient: apiClient)
         }
@@ -169,6 +137,12 @@ struct SessionActionsMenu: View {
     }
 
     // MARK: - Actions
+
+    /// ChatView presents the utility, so it stays open across a resize.
+    private func open(_ utility: ChatUtility) {
+        viewModel.utilityTab = utility
+        viewModel.isUtilityOpen = true
+    }
 
     private func summarizeSession() async {
         guard let providerID = viewModel.selectedProviderID,

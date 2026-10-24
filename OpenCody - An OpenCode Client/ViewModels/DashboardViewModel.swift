@@ -323,8 +323,14 @@ final class DashboardViewModel {
     @ObservationIgnored private var pollTask: Task<Void, Never>?
     @ObservationIgnored private var lastSSEEventAt: Date?
 
+    /// Views showing this model. A resize can show the new layout before the old one
+    /// disappears, so events stop only when the last of them has stopped observing.
+    @ObservationIgnored private var observerCount = 0
+
     /// Subscribe to SSE events for live session updates.
     func startObservingEvents() {
+        observerCount += 1
+        guard observerCount == 1 else { return }
         eventToken = connectionManager.subscribeToEvents { [weak self] event in
             self?.handleEvent(event)
         }
@@ -340,6 +346,8 @@ final class DashboardViewModel {
 
     /// Unsubscribe from SSE events.
     func stopObservingEvents() {
+        observerCount = max(0, observerCount - 1)
+        guard observerCount == 0 else { return }
         if let t = eventToken { connectionManager.unsubscribeFromEvents(token: t) }
         if let t = refreshToken { connectionManager.unsubscribeFromRefresh(token: t) }
         eventToken = nil

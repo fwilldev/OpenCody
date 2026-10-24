@@ -12,12 +12,9 @@ import SwiftUI
 
 /// Main dashboard showing the list of projects, with drill-down to sessions and real-time updates via SSE.
 struct DashboardView: View {
+    let viewModel: DashboardViewModel
     let connectionManager: ConnectionManager
-    @State private var viewModel: DashboardViewModel
-    @State private var showCreateSheet: Bool = false
-    @State private var showAddServer: Bool = false
-    @State private var showTipJar: Bool = false
-    @State private var createdSession: Session?
+    @Environment(AppRouter.self) private var router
     @State private var renamingProject: ProjectGroup?
     @EnvironmentObject private var serverStore: ServerStoreModel
 
@@ -28,13 +25,6 @@ struct DashboardView: View {
     @Bindable private var tipPromptService = TipPromptService.shared
     @Bindable private var reviewPromptService = ReviewPromptService.shared
     @Environment(\.requestReview) private var requestReview
-
-    // MARK: - Init
-
-    init(connectionManager: ConnectionManager) {
-        self.connectionManager = connectionManager
-        self._viewModel = State(initialValue: DashboardViewModel(connectionManager: connectionManager))
-    }
 
     // MARK: - Computed
 
@@ -97,34 +87,17 @@ struct DashboardView: View {
                     RefreshButton { await refresh() }
 
                     Button("New Session", systemImage: "plus") {
-                        showCreateSheet = true
+                        router.newSession = .init()
                     }
                     .keyboardShortcut("n", modifiers: .command)
                 }
             }
-        }
-        .sheet(isPresented: $showCreateSheet) {
-            CreateSessionSheet(
-                viewModel: viewModel,
-                connectionManager: connectionManager,
-                onSessionCreated: { session in
-                    createdSession = session
-                }
-            )
-        }
-        .navigationDestination(item: $createdSession) { session in
-            ChatView(session: session, connectionManager: connectionManager)
-        }
-        .sheet(isPresented: $showAddServer) {
-            ServerFormView(server: nil, connectionManager: connectionManager)
-                .environmentObject(serverStore)
         }
         .task(id: connectionManager.activeServerID) {
             viewModel.loadClosedProjects()
             await viewModel.loadSessions()
             await viewModel.loadStatuses()
             await viewModel.loadProjects()
-            viewModel.startObservingEvents()
         }
         .onChange(of: isActiveServerOffline) { wasOffline, isOffline in
             // When transitioning from offline → online, reload data
@@ -139,12 +112,8 @@ struct DashboardView: View {
             viewModel.stopObservingEvents()
         }
         .projectRenameAlert($renamingProject, viewModel: viewModel)
-        .sheet(isPresented: $showTipJar) {
-            NavigationStack {
-                TipJarView()
-            }
-        }
         .onAppear {
+            viewModel.startObservingEvents()
             viewAppearCount += 1
             // Only consider showing a prompt when returning to the dashboard
             // after navigating away (e.g. after closing a chat), never on first display.
@@ -167,7 +136,7 @@ struct DashboardView: View {
                 }
             } else {
                 Button("Sure, show me") {
-                    showTipJar = true
+                    router.showTipJar = true
                 }
             }
             Button("Maybe later", role: .cancel) { }
@@ -263,7 +232,7 @@ struct DashboardView: View {
                     systemImage: "server.rack",
                     title: "No Server Connected",
                     message: "Add a server in Settings to get started.",
-                    action: { showAddServer = true },
+                    action: { router.showAddServer = true },
                     actionLabel: "Add Server"
                 )
             } else {
@@ -271,7 +240,7 @@ struct DashboardView: View {
                     systemImage: "rectangle.stack",
                     title: "No Sessions",
                     message: "Start a new coding session",
-                    action: { showCreateSheet = true },
+                    action: { router.newSession = .init() },
                     actionLabel: "New Session"
                 )
             }
@@ -283,13 +252,7 @@ struct DashboardView: View {
         ScrollView {
             LazyVStack(spacing: Theme.Spacing.sm) {
                 ForEach(viewModel.projectGroups) { group in
-                    NavigationLink(destination: ProjectSessionsView(
-                        projectName: group.name,
-                        projectPath: group.directory,
-                        initialStatusMap: viewModel.statusMap,
-                        viewModel: viewModel,
-                        connectionManager: connectionManager
-                    )) {
+                    NavigationLink(value: AppRouter.Route.project(group.directory)) {
                         ProjectCardView(
                             projectName: group.name,
                             projectPath: group.directory,
@@ -327,7 +290,7 @@ struct DashboardView: View {
 
                 // Support the Developer footer link
                 Button {
-                    showTipJar = true
+                    router.showTipJar = true
                 } label: {
                     Label("Support the Developer", systemImage: "heart")
                         .font(.footnote)

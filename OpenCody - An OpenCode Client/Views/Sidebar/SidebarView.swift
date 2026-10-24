@@ -1,45 +1,25 @@
 //
-//  iPadSidebarView.swift
+//  SidebarView.swift
 //  OpenCody - An OpenCode Client
 //
 
 import SwiftUI
 
-/// iPad sidebar with server switcher, live session list, and settings links.
-struct iPadSidebarView: View {
+/// Sidebar of the regular-width layout: server switcher, projects and settings.
+struct SidebarView: View {
     let connectionManager: ConnectionManager
     let viewModel: DashboardViewModel
     @Binding var selectedProjectKey: String?
-    @Binding var showCreateSheet: Bool
-    let openServers: () -> Void
     let openSettings: () -> Void
 
+    @Environment(AppRouter.self) private var router
     @EnvironmentObject private var serverStore: ServerStoreModel
-    @State private var showTipJar: Bool = false
     @State private var renamingProject: ProjectGroup?
 
     /// Whether the active server's connection is in the offline state.
     private var isActiveServerOffline: Bool {
         guard let id = connectionManager.activeServerID else { return false }
         return connectionManager.connectionState(for: id) == .offline
-    }
-
-    // MARK: - Init
-
-    init(
-        connectionManager: ConnectionManager,
-        viewModel: DashboardViewModel,
-        selectedProjectKey: Binding<String?>,
-        showCreateSheet: Binding<Bool>,
-        openServers: @escaping () -> Void,
-        openSettings: @escaping () -> Void
-    ) {
-        self.connectionManager = connectionManager
-        self.viewModel = viewModel
-        self._selectedProjectKey = selectedProjectKey
-        self._showCreateSheet = showCreateSheet
-        self.openServers = openServers
-        self.openSettings = openSettings
     }
 
     // MARK: - Body
@@ -83,13 +63,19 @@ struct iPadSidebarView: View {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, Theme.Spacing.lg)
                 } else if connectionManager.activeAPIClient == nil {
-                    ContentUnavailableView {
+                    // Not a ContentUnavailableView: in a narrow sidebar it truncates its title.
+                    VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
                         Label("No Server Connected", systemImage: "server.rack")
-                    } description: {
+                            .font(Theme.Fonts.bodyBold)
+                            .foregroundStyle(Theme.Colors.cloud)
                         Text("Add a server to get started.")
-                    } actions: {
-                        Button("Manage Servers", action: openServers)
+                            .font(Theme.Fonts.caption)
+                            .foregroundStyle(Theme.Colors.silver)
+                        Button("Manage Servers", action: openSettings)
+                            .font(Theme.Fonts.caption)
                     }
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.vertical, Theme.Spacing.xs)
                 } else if viewModel.activeSessions.isEmpty && !viewModel.isLoading {
                     Text("No sessions")
                         .font(Theme.Fonts.caption)
@@ -156,7 +142,7 @@ struct iPadSidebarView: View {
 
                     // Support the Developer
                     Button {
-                        showTipJar = true
+                        router.showTipJar = true
                     } label: {
                         Label("Support the Developer", systemImage: "heart")
                             .font(Theme.Fonts.caption)
@@ -205,15 +191,10 @@ struct iPadSidebarView: View {
                     }
 
                     Button("New Session", systemImage: "plus") {
-                        showCreateSheet = true
+                        router.newSession = .init()
                     }
                     .keyboardShortcut("n", modifiers: .command)
                 }
-            }
-        }
-        .sheet(isPresented: $showTipJar) {
-            NavigationStack {
-                TipJarView()
             }
         }
         .projectRenameAlert($renamingProject, viewModel: viewModel)

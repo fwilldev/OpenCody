@@ -64,6 +64,11 @@ final class ChatViewModel {
     var error: String? = nil
     /// A session just forked from this one; the chat navigates to it.
     var forkedSession: Session?
+    /// Chat utilities state lives here, not in the view, so it survives a resize.
+    var isUtilityOpen = false
+    var utilityTab: ChatUtility = .files
+    /// Topmost visible message while scrolled up; `nil` keeps the chat pinned to the bottom.
+    @ObservationIgnored var scrollAnchorID: String?
 
     /// Server-reported session status. Updated from SSE events and REST polling.
     /// Drives `isGenerating` reactively instead of manual toggling.
@@ -229,6 +234,23 @@ final class ChatViewModel {
     init(session: Session, connectionManager: ConnectionManager) {
         self.session = session
         self.connectionManager = connectionManager
+    }
+
+    /// Recently shown chats. A resize rebuilds the view tree; reusing the model keeps
+    /// the draft, the loaded messages, the open utility and the scroll position.
+    // ponytail: keeps the last 4 sessions only, so browsing doesn't pin every chat in memory.
+    @MainActor private static var recent: [ChatViewModel] = []
+
+    @MainActor static func shared(session: Session, connectionManager: ConnectionManager) -> ChatViewModel {
+        if let index = recent.firstIndex(where: { $0.session.id == session.id }) {
+            let model = recent.remove(at: index)
+            recent.append(model)
+            return model
+        }
+        let model = ChatViewModel(session: session, connectionManager: connectionManager)
+        recent.append(model)
+        if recent.count > 4 { recent.removeFirst() }
+        return model
     }
 
     // MARK: - Public API
@@ -579,8 +601,14 @@ final class ChatViewModel {
     @ObservationIgnored private var eventToken: UUID?
     @ObservationIgnored private var refreshToken: UUID?
 
+    /// Views showing this model. A resize can show the new layout before the old one
+    /// disappears, so events stop only when the last of them has stopped observing.
+    @ObservationIgnored private var observerCount = 0
+
     /// Subscribe to SSE events for live message/part/permission updates.
     func startObservingEvents() {
+        observerCount += 1
+        guard observerCount == 1 else { return }
         // Do not scope SSE stream by directory here.
         // Directory-prefix filtering can drop valid session events (status/question)
         // when path normalization differs between server/client. We route by session
@@ -600,6 +628,8 @@ final class ChatViewModel {
 
     /// Unsubscribe from SSE events.
     func stopObservingEvents() {
+        observerCount = max(0, observerCount - 1)
+        guard observerCount == 0 else { return }
         if let t = eventToken { connectionManager.unsubscribeFromEvents(token: t) }
         if let t = refreshToken { connectionManager.unsubscribeFromRefresh(token: t) }
         eventToken = nil

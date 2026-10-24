@@ -13,15 +13,11 @@ import SwiftUI
 /// Fetches sessions per-directory with `roots=true` so that summary data and diffs are available.
 /// Subscribes to SSE events for live session/status updates.
 struct ProjectSessionsView: View {
-    let projectName: String
-    let projectPath: String?
-    let initialStatusMap: [String: SessionStatus]
+    let projectPath: String
     let viewModel: DashboardViewModel
     let connectionManager: ConnectionManager
 
-    @Environment(\.horizontalSizeClass) private var sizeClass
-    @State private var showCreateSheet: Bool = false
-    @State private var createdSession: Session?
+    @Environment(AppRouter.self) private var router
     @State private var projectSessions: [Session] = []
     @State private var localStatusMap: [String: SessionStatus] = [:]
     @State private var isLoading = true
@@ -108,7 +104,7 @@ struct ProjectSessionsView: View {
                     .padding(.top, Theme.Spacing.xs)
             }
         }
-        .navigationTitle(projectPath.map(viewModel.projectName(for:)) ?? projectName)
+        .navigationTitle(viewModel.projectName(for: projectPath))
         .searchable(text: $searchText, prompt: "Search sessions")
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
@@ -120,24 +116,10 @@ struct ProjectSessionsView: View {
                 RefreshButton { await reload() }
 
                 Button("New Session", systemImage: "plus") {
-                    showCreateSheet = true
+                    router.newSession = .init(directory: projectPath)
                 }
                 .keyboardShortcut("n", modifiers: .command)
             }
-        }
-        .sheet(isPresented: $showCreateSheet) {
-            CreateSessionSheet(
-                viewModel: viewModel,
-                connectionManager: connectionManager,
-                preselectedPath: projectPath,
-                onSessionCreated: { session in
-                    createdSession = session
-                }
-            )
-            .presentationDetents([.large])
-        }
-        .navigationDestination(item: $createdSession) { session in
-            chatDestination(for: session)
         }
         .renameAlert(
             "Rename Session",
@@ -159,7 +141,7 @@ struct ProjectSessionsView: View {
         }
         .task(id: projectPath) {
             stopObservingEvents()
-            localStatusMap = initialStatusMap
+            localStatusMap = viewModel.statusMap
             projectSessions = []
             isLoading = true
             await reload()
@@ -187,7 +169,7 @@ struct ProjectSessionsView: View {
                 message: showArchived || !supportsArchiving
                     ? "This project has no sessions yet."
                     : "No active sessions. Use the archive button to see archived ones.",
-                action: { showCreateSheet = true },
+                action: { router.newSession = .init(directory: projectPath) },
                 actionLabel: "New Session"
             )
         }
@@ -196,7 +178,7 @@ struct ProjectSessionsView: View {
     // MARK: - Data Loading
 
     private var directory: String? {
-        projectPath.map { $0.hasPrefix("/") ? $0 : "/\($0)" }
+        projectPath.hasPrefix("/") ? projectPath : "/\(projectPath)"
     }
 
     private func reload() async {
@@ -285,8 +267,7 @@ struct ProjectSessionsView: View {
     }
 
     private func handleEvent(_ event: SSEEvent) {
-        guard let rawPath = projectPath else { return }
-        let directory = rawPath.hasPrefix("/") ? rawPath : "/\(rawPath)"
+        guard let directory else { return }
 
         switch event {
         case .sessionCreated(let session):
@@ -329,7 +310,7 @@ struct ProjectSessionsView: View {
     /// past the type-checker's time limit.
     @ViewBuilder
     private func sessionRow(_ session: Session) -> some View {
-        NavigationLink(destination: chatDestination(for: session)) {
+        NavigationLink(value: AppRouter.Route.chat(session)) {
             SessionCardView(
                 session: session,
                 status: localStatusMap[session.id],
@@ -387,57 +368,6 @@ struct ProjectSessionsView: View {
         if let index = projectSessions.firstIndex(where: { $0.id == session.id }),
            let updated = viewModel.sessions.first(where: { $0.id == session.id }) {
             projectSessions[index] = updated
-        }
-    }
-
-    @ViewBuilder
-    private func chatDestination(for session: Session) -> some View {
-        if sizeClass == .compact {
-            ChatView(session: session, connectionManager: connectionManager)
-        } else {
-            iPadChatUtilitiesContainer(session: session, connectionManager: connectionManager)
-        }
-    }
-}
-
-// MARK: - iPad Chat Utilities Container
-
-private struct iPadChatUtilitiesContainer: View {
-    let session: Session
-    let connectionManager: ConnectionManager
-
-    @State private var viewModel: ChatViewModel
-    @State private var isUtilitiesOpen = false
-    @State private var selectedTab: iPadUtilityTab = .files
-
-    init(session: Session, connectionManager: ConnectionManager) {
-        self.session = session
-        self.connectionManager = connectionManager
-        self._viewModel = State(initialValue: ChatViewModel(session: session, connectionManager: connectionManager))
-    }
-
-    var body: some View {
-        // Side by side, so the panel narrows the chat instead of covering its input.
-        // (`.inspector` overlays here, inside the split view's detail stack.)
-        HStack(spacing: 0) {
-            ChatView(
-                session: session,
-                connectionManager: connectionManager,
-                viewModel: viewModel,
-                utilitiesState: iPadUtilitiesState(isOpen: $isUtilitiesOpen, selectedTab: $selectedTab)
-            )
-
-            if isUtilitiesOpen, let client = connectionManager.activeAPIClient {
-                Divider()
-                iPadUtilitiesPanel(
-                    session: session,
-                    apiClient: client,
-                    viewModel: viewModel,
-                    selectedTab: $selectedTab
-                )
-                .frame(width: 360)
-                .transition(.move(edge: .trailing))
-            }
         }
     }
 }

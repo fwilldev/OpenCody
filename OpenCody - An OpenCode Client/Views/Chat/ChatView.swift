@@ -8,7 +8,8 @@ import SwiftUI
 struct ChatView: View {
     let session: Session
     let connectionManager: ConnectionManager
-    let utilitiesState: iPadUtilitiesState?
+    /// Whether Files, Todos and Diff open in a panel beside the chat rather than a sheet.
+    let showsUtilitiesPanel: Bool
     @State private var viewModel: ChatViewModel
     @State private var isAtBottom = true
     @State private var scrollViewHeight: CGFloat = 0
@@ -21,24 +22,13 @@ struct ChatView: View {
     init(
         session: Session,
         connectionManager: ConnectionManager,
-        utilitiesState: iPadUtilitiesState? = nil
+        viewModel: ChatViewModel? = nil,
+        showsUtilitiesPanel: Bool = false
     ) {
         self.session = session
         self.connectionManager = connectionManager
-        self.utilitiesState = utilitiesState
-        self._viewModel = State(initialValue: ChatViewModel(session: session, connectionManager: connectionManager))
-    }
-
-    init(
-        session: Session,
-        connectionManager: ConnectionManager,
-        viewModel: ChatViewModel,
-        utilitiesState: iPadUtilitiesState? = nil
-    ) {
-        self.session = session
-        self.connectionManager = connectionManager
-        self.utilitiesState = utilitiesState
-        self._viewModel = State(initialValue: viewModel)
+        self.showsUtilitiesPanel = showsUtilitiesPanel
+        self._viewModel = State(initialValue: viewModel ?? .shared(session: session, connectionManager: connectionManager))
     }
 
     var body: some View {
@@ -85,11 +75,11 @@ struct ChatView: View {
         .navigationTitle(viewModel.session.title.isEmpty ? "Session" : viewModel.session.title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            if let utilitiesState {
+            if showsUtilitiesPanel {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Utilities", systemImage: "sidebar.right") {
                         withAnimation(.easeInOut(duration: 0.2)) {
-                            utilitiesState.isOpen.wrappedValue.toggle()
+                            viewModel.isUtilityOpen.toggle()
                         }
                     }
                     .keyboardShortcut("i", modifiers: [.command, .option])
@@ -106,7 +96,7 @@ struct ChatView: View {
                         session: viewModel.session,
                         viewModel: viewModel,
                         apiClient: client,
-                        showsUtilityItems: utilitiesState == nil
+                        showsUtilityItems: !showsUtilitiesPanel
                     )
                 }
             }
@@ -127,6 +117,27 @@ struct ChatView: View {
         .navigationDestination(item: $viewModel.forkedSession) { forked in
             ChatView(session: forked, connectionManager: connectionManager)
         }
+        .sheet(isPresented: utilitySheet) {
+            if let client = connectionManager.activeAPIClient {
+                switch viewModel.utilityTab {
+                case .diff:
+                    SessionDiffView(session: viewModel.session, apiClient: client)
+                case .todos:
+                    TodoListView(session: viewModel.session, apiClient: client, viewModel: viewModel)
+                case .files:
+                    FileExplorerView(session: viewModel.session, apiClient: client) { path in
+                        viewModel.referenceFile(path: path)
+                    }
+                }
+            }
+        }
+    }
+
+    private var utilitySheet: Binding<Bool> {
+        Binding(
+            get: { !showsUtilitiesPanel && viewModel.isUtilityOpen },
+            set: { viewModel.isUtilityOpen = $0 }
+        )
     }
 
     // MARK: - Message List
@@ -211,6 +222,7 @@ struct ChatView: View {
                         .frame(height: 1)
                         .id("bottom")
                 }
+                .scrollTargetLayout()
                 .padding(.horizontal, Theme.Spacing.md)
                 .padding(.vertical, Theme.Spacing.sm)
                 // Animate message arrival (new bubbles slide up) and the
@@ -236,6 +248,9 @@ struct ChatView: View {
                 scrollViewHeight = height
             }
             .defaultScrollAnchor(.bottom)
+            .onScrollTargetVisibilityChange(idType: String.self) { visibleIDs in
+                viewModel.scrollAnchorID = visibleIDs.contains("bottom") ? nil : visibleIDs.first
+            }
             .scrollDismissesKeyboard(.interactively)
             .onTapGesture {
                 isInputFocused = false
@@ -255,12 +270,15 @@ struct ChatView: View {
             }
             .onAppear {
                 // The lazy rows only report their real heights over the next couple of
-                // layout passes, so the bottom anchor can land short on first display.
-                // Nudge it once now and once after the heights have settled.
-                proxy.scrollTo("bottom", anchor: .bottom)
+                // layout passes, so the target can land short on first display.
+                // Nudge it once now and once after the heights have settled. A chat
+                // that was scrolled up before a resize goes back to the same message.
+                let anchor = viewModel.scrollAnchorID
+                let restore = { anchor.map { proxy.scrollTo($0, anchor: .top) } ?? proxy.scrollTo("bottom", anchor: .bottom) }
+                restore()
                 Task { @MainActor in
                     try? await Task.sleep(for: .milliseconds(150))
-                    proxy.scrollTo("bottom", anchor: .bottom)
+                    restore()
                 }
             }
         }
