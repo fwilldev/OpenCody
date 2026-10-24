@@ -47,6 +47,12 @@ final class AdaptiveLayoutUITests: XCTestCase {
         app.navigationBars["OpenCody"].waitForExistence(timeout: 3)
     }
 
+    /// Offscreen form rows aren't in the hierarchy until scrolled to.
+    private func scrollTo(_ element: XCUIElement) -> XCUIElement {
+        for _ in 0..<4 where !(element.exists && element.isHittable) { app.swipeUp() }
+        return element
+    }
+
     private var chatInput: XCUIElement { app.textViews.firstMatch }
 
     /// Launches the app, adding the test server first on a fresh install.
@@ -75,13 +81,13 @@ final class AdaptiveLayoutUITests: XCTestCase {
                 field.tap()
                 field.typeText(text)
             }
-            let test = app.buttons["Test Connection"]
-            if !test.isHittable { app.swipeUp() }
-            test.tap()
+            let hideKeyboard = app.keyboards.buttons["Hide keyboard"].firstMatch
+            if hideKeyboard.exists { hideKeyboard.tap() }
+            scrollTo(app.buttons["Test Connection"]).tap()
             XCTAssertTrue(app.staticTexts["Connection successful"].waitForExistence(timeout: 15), "test connection")
-            // Offscreen form rows aren't in the hierarchy until scrolled to.
+            // Save sits in the sheet's toolbar, which scrolls away with the form on small displays.
             let save = app.buttons["Save Server"]
-            for _ in 0..<4 where !(save.exists && save.isHittable) { app.swipeUp() }
+            for _ in 0..<4 where !(save.exists && save.isHittable) { app.swipeDown() }
             save.tap()
             dismissPrompts()
         }
