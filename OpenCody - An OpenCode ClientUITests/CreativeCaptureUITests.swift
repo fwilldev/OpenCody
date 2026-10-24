@@ -11,11 +11,15 @@ import XCTest
 /// `TEST_RUNNER_` prefix. Optional: `OPENCODY_CAPTURE_PAIRING` (a fresh 2.x pairing
 /// link, used instead of host and password), `OPENCODY_CAPTURE_PROJECT_NAME` (renames
 /// the project from its context menu), `OPENCODY_CAPTURE_SERVER_NAME`.
-/// The added server is deleted again at the end on iPhone. iPad runs in landscape and
-/// expects a fresh install without servers.
+/// The added server is deleted again at the end in the compact layout. The regular
+/// (sidebar) layout expects a fresh install without servers. `OPENCODY_CAPTURE_LANDSCAPE=1`
+/// rotates first (the 1.8 iPad set).
 final class CreativeCaptureUITests: XCTestCase {
     private var app: XCUIApplication!
-    private var isPad: Bool { UIDevice.current.userInterfaceIdiom == .pad }
+    /// Sidebar layout (iPad, iPhone Duo's inner display), decided by the window, not the device.
+    private var isRegular: Bool { app.navigationBars["OpenCody"].exists }
+    /// Files, Todos and Diff sit in a panel beside the chat when the detail column is wide enough.
+    private var hasUtilitiesPanel: Bool { app.buttons["Utilities"].firstMatch.exists }
 
     override func setUp() {
         continueAfterFailure = false
@@ -112,7 +116,7 @@ final class CreativeCaptureUITests: XCTestCase {
     }
 
     private func addServer(named serverName: String) throws {
-        if isPad {
+        if isRegular {
             app.buttons["Add Server"].firstMatch.tap()
         } else {
             app.navigationBars["Servers"].buttons["Add"].firstMatch.tap()
@@ -147,7 +151,7 @@ final class CreativeCaptureUITests: XCTestCase {
 
     /// The chat of the first session also gets its diff, files and todos captured.
     private func captureUtilities() {
-        if isPad {
+        if hasUtilitiesPanel {
             app.buttons["Utilities"].firstMatch.tap()
             sleep(4)
             screenshot("files")
@@ -199,7 +203,7 @@ final class CreativeCaptureUITests: XCTestCase {
         let projectName = optionalEnv("OPENCODY_CAPTURE_PROJECT_NAME")
         let serverName = optionalEnv("OPENCODY_CAPTURE_SERVER_NAME") ?? "Mac Studio"
 
-        if isPad { XCUIDevice.shared.orientation = .landscapeLeft }
+        if optionalEnv("OPENCODY_CAPTURE_LANDSCAPE") != nil { XCUIDevice.shared.orientation = .landscapeLeft }
         app = XCUIApplication()
         app.launch()
 
@@ -207,7 +211,7 @@ final class CreativeCaptureUITests: XCTestCase {
         let whatsNew = app.buttons["Continue"].firstMatch
         if whatsNew.waitForExistence(timeout: 8) { whatsNew.tap() }
         dismissPrompts()
-        if !isPad {
+        if !isRegular {
             openServers()
             while app.staticTexts[serverName].waitForExistence(timeout: 2) { deleteServer(named: serverName) }
         }
@@ -224,7 +228,7 @@ final class CreativeCaptureUITests: XCTestCase {
         // The system "save password" sheet can appear several seconds after saving.
         for _ in 0..<4 where !projectCell.isHittable {
             dismissPrompts()
-            if !isPad { tapTab("Dashboard") }
+            if !isRegular { tapTab("Dashboard") }
             dismissPrompts()
             _ = projectCell.waitForExistence(timeout: 5)
         }
@@ -257,7 +261,7 @@ final class CreativeCaptureUITests: XCTestCase {
             row.tap()
             sleep(6)
             screenshot("chat-\(index)")
-            if isPad, index > 0 {
+            if hasUtilitiesPanel, index > 0 {
                 app.buttons["Utilities"].firstMatch.tap()
                 sleep(4)
                 screenshot("chat-\(index)-panel")
@@ -267,9 +271,9 @@ final class CreativeCaptureUITests: XCTestCase {
             back()
         }
 
-        // The iPad sidebar's Settings button ignores synthesized taps: start iPad runs
-        // from a fresh install instead of cleaning up.
-        guard !isPad else { return }
+        // The sidebar's Settings button ignores synthesized taps: start regular-width
+        // runs from a fresh install instead of cleaning up.
+        guard !isRegular else { return }
         back()
         sleep(3)
         screenshot("dashboard-end")
