@@ -5,7 +5,7 @@ import SwiftUI
 /// Release notes shown once per release, the first time the updated app launches.
 enum WhatsNew {
     /// The release these notes describe. Bump it (and the notes) to show the sheet again.
-    static let version = "1.8"
+    static let version = "1.9"
 
     private static let seenKey = "whatsNew_lastSeenVersion"
 
@@ -35,11 +35,9 @@ struct WhatsNewView: View {
                         .padding(.top, Theme.Spacing.xl)
 
                     VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-                        item("Rename sessions and projects: press and hold one, or right-click on iPad. Thanks for the suggestion!")
-                        item("New servers use OpenCode 2.x, and the app detects which version a server runs.")
-                        item("Pair with a pairing link instead of typing the password (OpenCode 2.x).")
-                        item("Search and page through sessions, and fork a chat from any message.")
-                        item("A cleaner, more accessible interface, with a proper iPad layout and keyboard shortcuts.")
+                        item("Made for iPhone Duo: the outer display keeps the familiar iPhone layout, unfold it and your projects and chat sit side by side.")
+                        item("Folding, unfolding and resizing keep your place: the open chat, its scroll position and the message you were typing.")
+                        item("On iPad, resizing the window in Split View no longer jumps back to the project list.")
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
