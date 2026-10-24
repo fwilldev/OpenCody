@@ -13,9 +13,11 @@ import XCTest
 /// the project from its context menu), `OPENCODY_CAPTURE_SERVER_NAME`.
 /// The added server is deleted again at the end in the compact layout. The regular
 /// (sidebar) layout expects a fresh install without servers. `OPENCODY_CAPTURE_LANDSCAPE=1`
-/// rotates first (the 1.8 iPad set).
+/// rotates first (the 1.8 iPad set). Under `scripts/duo-host.sh` with `OPENCODY_DUO_HOST_DIR`
+/// set, the iPhone Duo simulator runs the folded flow and unfolds for each shot (its inner display).
 final class CreativeCaptureUITests: XCTestCase {
     private var app: XCUIApplication!
+    private let duo = DuoHost()
     /// Sidebar layout (iPad, iPhone Duo's inner display), decided by the window, not the device.
     private var isRegular: Bool { app.navigationBars["OpenCody"].exists }
     /// Files, Todos and Diff sit in a panel beside the chat when the detail column is wide enough.
@@ -81,6 +83,15 @@ final class CreativeCaptureUITests: XCTestCase {
     }
 
     private func screenshot(_ name: String) {
+        if let duo {
+            // Taps don't reach the resized session, so only the shot happens unfolded.
+            duo.send("unfold")
+            sleep(3)
+            duo.send("shot \(name)")
+            duo.send("fold")
+            sleep(2)
+            return
+        }
         let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         attachment.name = name
         attachment.lifetime = .keepAlways
@@ -101,6 +112,11 @@ final class CreativeCaptureUITests: XCTestCase {
         XCTAssertTrue(item.waitForExistence(timeout: 5), "\(action) in context menu")
         sleep(1)
         screenshot(name)
+        if duo != nil {
+            // Unfolding for the shot closed the menu.
+            element.press(forDuration: 1.2)
+            XCTAssertTrue(item.waitForExistence(timeout: 5), "\(action) in context menu")
+        }
         item.tap()
     }
 
@@ -179,9 +195,10 @@ final class CreativeCaptureUITests: XCTestCase {
             XCTAssertTrue(button.waitForExistence(timeout: 3), item)
             button.tap()
             sleep(2)
-            // Tapping the grabber moves a half-height sheet to full height.
+            // Tapping the grabber moves a half-height sheet to full height. The Duo's inner
+            // display keeps half height, so the sidebar and chat stay in view.
             let grabber = app.buttons["Sheet Grabber"].firstMatch
-            if grabber.exists, "\(grabber.value ?? "")".contains("Half") { grabber.tap() }
+            if duo == nil, grabber.exists, "\(grabber.value ?? "")".contains("Half") { grabber.tap() }
             sleep(2)
             screenshot(name)
             if name == "files" {
