@@ -7,15 +7,27 @@ import XCTest
 /// `OPENCODY_LAYOUT_PROJECT` (project name as listed) and `OPENCODY_LAYOUT_SESSION` (title of an
 /// existing session) are set — pass them with the `TEST_RUNNER_` prefix. The test server
 /// stays saved, so the app must be freshly installed or have no other server.
+/// On the iPhone Duo simulator, run under `scripts/duo-host.sh` with
+/// `TEST_RUNNER_OPENCODY_DUO_HOST_DIR` set: it unfolds to the inner display instead of rotating.
 final class AdaptiveLayoutUITests: XCTestCase {
     private var app: XCUIApplication!
+    private let duo = DuoHost()
 
     override func setUp() {
         continueAfterFailure = false
     }
 
     override func tearDown() {
-        XCUIDevice.shared.orientation = .portrait
+        resize(regular: false)
+    }
+
+    /// Unfolds or folds the Duo; elsewhere rotates, as large iPhones are regular width in landscape.
+    private func resize(regular: Bool) {
+        if let duo {
+            duo.send(regular ? "unfold" : "fold")
+        } else {
+            XCUIDevice.shared.orientation = regular ? .landscapeLeft : .portrait
+        }
     }
 
     private func env(_ key: String) throws -> String {
@@ -36,6 +48,8 @@ final class AdaptiveLayoutUITests: XCTestCase {
     }
 
     private func screenshot(_ name: String) {
+        // XCUIScreen only sees the outer display; the host shoots the Duo's inner one.
+        duo?.send("shot \(name)")
         let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         attachment.name = name
         attachment.lifetime = .keepAlways
@@ -54,6 +68,14 @@ final class AdaptiveLayoutUITests: XCTestCase {
     }
 
     private var chatInput: XCUIElement { app.textViews.firstMatch }
+
+    /// The project's sidebar row ends left of the composer: a column beside the chat, not an
+    /// overlay. Compares frames, as hit-testing is unreliable in the Duo's resized app session.
+    private func assertSidebarBesideChat(project: String, _ message: String) {
+        let row = app.staticTexts[project].firstMatch
+        XCTAssertTrue(row.exists, message)
+        XCTAssertLessThanOrEqual(row.frame.maxX, chatInput.frame.minX, message)
+    }
 
     /// Launches the app, adding the test server first on a fresh install.
     private func launchConnected() throws -> (project: String, session: String) {
@@ -104,25 +126,26 @@ final class AdaptiveLayoutUITests: XCTestCase {
     }
 
     /// iPhone Duo's inner display (and iPad): projects in the sidebar, the chat beside it.
+    /// The chat opens before the resize: taps don't reach the Duo's resized app session.
     func testRegularWidthShowsSidebarAndChat() throws {
         let (project, session) = try launchConnected()
+        openChat(project: project, session: session)
         if !isRegularLayout {
-            // Large iPhones are regular width in landscape; the Duo's outer display is not.
-            XCUIDevice.shared.orientation = .landscapeLeft
+            resize(regular: true)
             guard isRegularLayout else {
-                throw XCTSkip("Compact window. On iPhone Duo, unfold to the inner display in Device Hub first.")
+                throw XCTSkip("Compact window. On iPhone Duo, run under scripts/duo-host.sh to unfold.")
             }
         }
-        openChat(project: project, session: session)
 
-        XCTAssertTrue(app.staticTexts[project].firstMatch.isHittable, "sidebar visible next to the chat")
-        XCTAssertTrue(chatInput.isHittable, "composer visible next to the sidebar")
-        XCTAssertTrue(app.staticTexts[session].firstMatch.exists, "chat title")
+        XCTAssertTrue(chatInput.waitForExistence(timeout: 5), "chat still open")
+        assertSidebarBesideChat(project: project, "sidebar visible next to the chat")
+        // Narrow regular-width bars may hide the title text; the bar keeps it as identifier.
+        XCTAssertTrue(app.navigationBars[session].exists, "chat of the session")
         screenshot("sidebar-and-chat")
     }
 
     /// A fold or Split View resize swaps the compact and regular layouts; rotating a large
-    /// iPhone does the same, so it stands in for the fold here.
+    /// iPhone does the same, so it stands in for the fold off the Duo.
     func testSizeClassChangeKeepsChatAndDraft() throws {
         let (project, session) = try launchConnected()
         guard !isRegularLayout else { throw XCTSkip("Needs a compact window that turns regular in landscape.") }
@@ -131,14 +154,14 @@ final class AdaptiveLayoutUITests: XCTestCase {
         chatInput.tap()
         chatInput.typeText(draft)
 
-        XCUIDevice.shared.orientation = .landscapeLeft
-        guard isRegularLayout else { throw XCTSkip("Stays compact in landscape on this device.") }
+        resize(regular: true)
+        guard isRegularLayout else { throw XCTSkip("Stays compact after the resize on this device.") }
         XCTAssertTrue(chatInput.waitForExistence(timeout: 5), "chat still open after the resize")
         XCTAssertEqual(chatInput.value as? String, draft)
-        XCTAssertTrue(app.staticTexts[project].firstMatch.isHittable, "project selected in the sidebar")
+        assertSidebarBesideChat(project: project, "project in the sidebar next to the chat")
         screenshot("regular")
 
-        XCUIDevice.shared.orientation = .portrait
+        resize(regular: false)
         XCTAssertTrue(chatInput.waitForExistence(timeout: 5), "chat still open after resizing back")
         XCTAssertEqual(chatInput.value as? String, draft)
         screenshot("compact")
