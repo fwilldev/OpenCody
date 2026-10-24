@@ -190,10 +190,11 @@ struct ChatInputView: View {
                     }
                     .padding(6)
                     .background(
-                        RoundedRectangle(cornerRadius: 12)
+                        // Follows the display's corner radius where the field reaches the screen corner.
+                        ConcentricRectangle(corners: .concentric(minimum: .fixed(12)), isUniform: true)
                             .fill(.ultraThinMaterial)
                             .overlay(
-                                RoundedRectangle(cornerRadius: 12)
+                                ConcentricRectangle(corners: .concentric(minimum: .fixed(12)), isUniform: true)
                                     .stroke(Theme.Colors.border, lineWidth: 1)
                             )
                     )
