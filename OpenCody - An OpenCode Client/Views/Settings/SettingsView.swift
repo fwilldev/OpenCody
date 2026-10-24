@@ -23,9 +23,7 @@ struct SettingsView: View {
 
                     // MARK: - Connection
                     SettingsSection(title: "Connection") {
-                        NavigationLink {
-                            ServerListView(connectionManager: connectionManager)
-                        } label: {
+                        NavigationLink(value: AppRouter.SettingsRoute.servers) {
                             SettingsRow(
                                 icon: "server.rack",
                                 iconColor: Theme.Colors.cyberBlue,
@@ -57,13 +55,7 @@ struct SettingsView: View {
 
                     // MARK: - AI
                     SettingsSection(title: "AI") {
-                        NavigationLink {
-                            if let apiClient = connectionManager.activeAPIClient {
-                                ProvidersView(apiClient: apiClient)
-                            } else {
-                                noConnectionView(for: "Providers")
-                            }
-                        } label: {
+                        NavigationLink(value: AppRouter.SettingsRoute.providers) {
                             SettingsRow(
                                 icon: "cpu",
                                 iconColor: Theme.Colors.neonGreen,
@@ -74,13 +66,7 @@ struct SettingsView: View {
 
                         SettingsDivider()
 
-                        NavigationLink {
-                            if let apiClient = connectionManager.activeAPIClient {
-                                MCPView(apiClient: apiClient)
-                            } else {
-                                noConnectionView(for: "MCP Servers")
-                            }
-                        } label: {
+                        NavigationLink(value: AppRouter.SettingsRoute.mcp) {
                             SettingsRow(
                                 icon: "puzzlepiece.extension",
                                 iconColor: Theme.Colors.electricPurple,
@@ -138,9 +124,7 @@ struct SettingsView: View {
 
                     // MARK: - Support
                     SettingsSection(title: "Support") {
-                        NavigationLink {
-                            TipJarView()
-                        } label: {
+                        NavigationLink(value: AppRouter.SettingsRoute.tipJar) {
                             SettingsRow(
                                 icon: "heart.fill",
                                 iconColor: Theme.Colors.hotPink,
@@ -174,9 +158,7 @@ struct SettingsView: View {
 
                         SettingsDivider()
 
-                        NavigationLink {
-                            LicensesView()
-                        } label: {
+                        NavigationLink(value: AppRouter.SettingsRoute.licenses) {
                             SettingsRow(
                                 icon: "doc.text",
                                 iconColor: Theme.Colors.cyberBlue,
@@ -187,9 +169,7 @@ struct SettingsView: View {
 
                         SettingsDivider()
 
-                        NavigationLink {
-                            PrivacyPolicyView()
-                        } label: {
+                        NavigationLink(value: AppRouter.SettingsRoute.privacy) {
                             SettingsRow(
                                 icon: "hand.raised",
                                 iconColor: Theme.Colors.electricPurple,
@@ -238,6 +218,27 @@ struct SettingsView: View {
             }
         }
         .navigationTitle("Settings")
+        .navigationDestination(for: AppRouter.SettingsRoute.self) { route in
+            switch route {
+            case .servers:
+                ServerListView(connectionManager: connectionManager)
+            case .providers:
+                if let apiClient = connectionManager.activeAPIClient {
+                    ProvidersView(apiClient: apiClient)
+                } else {
+                    noConnectionView(for: "Providers")
+                }
+            case .mcp:
+                if let apiClient = connectionManager.activeAPIClient {
+                    MCPView(apiClient: apiClient)
+                } else {
+                    noConnectionView(for: "MCP Servers")
+                }
+            case .tipJar: TipJarView()
+            case .licenses: LicensesView()
+            case .privacy: PrivacyPolicyView()
+            }
+        }
         .navigationBarTitleDisplayMode(.large)
     }
 

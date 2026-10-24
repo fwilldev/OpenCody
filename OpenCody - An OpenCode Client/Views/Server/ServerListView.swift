@@ -14,9 +14,7 @@ struct ServerListView: View {
 
     let connectionManager: ConnectionManager
 
-    @State private var showAddServer: Bool = false
-    @State private var selectedServer: ServerConnection?
-    @State private var pairingServer: ServerConnection?
+    @Environment(AppRouter.self) private var router
     @State private var deletingServer: ServerConnection?
 
     // MARK: - Body
@@ -37,20 +35,16 @@ struct ServerListView: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button("Add", systemImage: "plus") {
-                    showAddServer = true
+                    router.showAddServer = true
                 }
                 .keyboardShortcut("n", modifiers: .command)
             }
         }
-        .sheet(isPresented: $showAddServer) {
-            ServerFormView(server: nil, connectionManager: connectionManager)
-                .environmentObject(serverStore)
-        }
-        .sheet(item: $selectedServer) { server in
+        .sheet(item: Bindable(router).selectedServer) { server in
             ServerFormView(server: server, connectionManager: connectionManager)
                 .environmentObject(serverStore)
         }
-        .sheet(item: $pairingServer) { server in
+        .sheet(item: Bindable(router).pairingServer) { server in
             PairDeviceView(server: server)
         }
         .confirmationDialog(
@@ -91,7 +85,7 @@ struct ServerListView: View {
             }
 
             Button {
-                showAddServer = true
+                router.showAddServer = true
             } label: {
                 HStack(spacing: Theme.Spacing.sm) {
                     Image(systemName: "plus")
@@ -132,7 +126,7 @@ struct ServerListView: View {
 
     private func serverRow(_ server: ServerConnection) -> some View {
         Button {
-            selectedServer = server
+            router.selectedServer = server
         } label: {
             HStack(spacing: Theme.Spacing.md) {
                 // Server icon
@@ -181,14 +175,14 @@ struct ServerListView: View {
             }
 
             Button {
-                selectedServer = server
+                router.selectedServer = server
             } label: {
                 Label("Edit", systemImage: "pencil")
             }
 
             if server.apiVersion == .v2 {
                 Button("Pair a Device", systemImage: "link.badge.plus") {
-                    pairingServer = server
+                    router.pairingServer = server
                 }
             }
 

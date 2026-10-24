@@ -29,7 +29,6 @@ struct ProjectSessionsView: View {
     @State private var nextCursor: String?
     @State private var searchText = ""
     @State private var showArchived: Bool = false
-    @State private var renamingSession: Session?
     @State private var deletingSession: Session?
 
     private let pageSize = 20
@@ -123,7 +122,7 @@ struct ProjectSessionsView: View {
         }
         .renameAlert(
             "Rename Session",
-            item: $renamingSession,
+            item: Bindable(router).renamingSession,
             currentName: { $0.title },
             onSave: { session, title in Task { await rename(session, to: title) } }
         )
@@ -321,7 +320,7 @@ struct ProjectSessionsView: View {
         .hoverEffect(.highlight)
         .contextMenu {
             Button("Rename Session", systemImage: "pencil") {
-                renamingSession = session
+                router.renamingSession = session
             }
 
             if !supportsArchiving {

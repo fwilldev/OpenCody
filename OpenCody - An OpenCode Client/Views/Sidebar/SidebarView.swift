@@ -14,7 +14,6 @@ struct SidebarView: View {
 
     @Environment(AppRouter.self) private var router
     @EnvironmentObject private var serverStore: ServerStoreModel
-    @State private var renamingProject: ProjectGroup?
 
     /// Whether the active server's connection is in the offline state.
     private var isActiveServerOffline: Bool {
@@ -117,7 +116,7 @@ struct SidebarView: View {
                         }
                         .contextMenu {
                             ProjectContextMenu(group: project, viewModel: viewModel) {
-                                renamingProject = project
+                                router.renamingProject = project
                             }
                         }
                     }
@@ -197,7 +196,7 @@ struct SidebarView: View {
                 }
             }
         }
-        .projectRenameAlert($renamingProject, viewModel: viewModel)
+        .projectRenameAlert(Bindable(router).renamingProject, viewModel: viewModel)
     }
 
     // MARK: - Server Switcher Row

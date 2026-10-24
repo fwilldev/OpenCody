@@ -15,7 +15,6 @@ struct DashboardView: View {
     let viewModel: DashboardViewModel
     let connectionManager: ConnectionManager
     @Environment(AppRouter.self) private var router
-    @State private var renamingProject: ProjectGroup?
     @EnvironmentObject private var serverStore: ServerStoreModel
 
     /// Tracks how many times this view has appeared during the current app session.
@@ -111,7 +110,7 @@ struct DashboardView: View {
         .onDisappear {
             viewModel.stopObservingEvents()
         }
-        .projectRenameAlert($renamingProject, viewModel: viewModel)
+        .projectRenameAlert(Bindable(router).renamingProject, viewModel: viewModel)
         .onAppear {
             viewModel.startObservingEvents()
             viewAppearCount += 1
@@ -265,7 +264,7 @@ struct DashboardView: View {
                     .hoverEffect(.highlight)
                     .contextMenu {
                         ProjectContextMenu(group: group, viewModel: viewModel) {
-                            renamingProject = group
+                            router.renamingProject = group
                         }
                     }
                 }

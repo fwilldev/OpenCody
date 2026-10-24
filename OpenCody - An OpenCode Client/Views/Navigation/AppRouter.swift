@@ -17,6 +17,11 @@ final class AppRouter {
         case chat(Session)
     }
 
+    /// Settings screens, pushed by value so `settingsPath` (and a resize) keeps them.
+    enum SettingsRoute: Hashable {
+        case servers, providers, mcp, tipJar, licenses, privacy
+    }
+
     var selectedTab: TabItem = .dashboard
     var dashboardPath: [Route] = []
     var settingsPath = NavigationPath()
@@ -25,6 +30,12 @@ final class AppRouter {
     var newSession: NewSessionRequest?
     var showAddServer = false
     var showTipJar = false
+    /// Rename alerts, held here so the view the other layout creates shows them again.
+    var renamingProject: ProjectGroup?
+    var renamingSession: Session?
+    /// The server list's edit and pairing sheets, for the same reason.
+    var selectedServer: ServerConnection?
+    var pairingServer: ServerConnection?
 
     struct NewSessionRequest: Identifiable {
         let id = UUID()

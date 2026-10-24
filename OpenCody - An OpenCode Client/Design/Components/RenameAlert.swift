@@ -23,7 +23,8 @@ private struct RenameAlert<Item: Identifiable>: ViewModifier {
             } message: { item in
                 Text(message(item))
             }
-            .onChange(of: item?.id) {
+            // Initial too: after a resize, a new view takes over an alert that is already up.
+            .onChange(of: item?.id, initial: true) {
                 if let item { text = currentName(item) }
             }
     }
