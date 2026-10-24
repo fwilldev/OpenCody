@@ -1,12 +1,6 @@
 #!/bin/zsh
-# Usage: scripts/duo-host.sh <duo-sim-udid> <command…>
-# Runs <command> (e.g. an xcodebuild test run) while serving the UI tests' DuoHost requests:
-#   unfold   resize the running app to the inner display (669x951 pt) via devicectl appResize
-#   fold     end the resize session, back to the outer display
-#   shot <n> screenshot of the inner display to $DUO_SHOTS/<n>.png (default /tmp/opencody-duo-shots)
-#   light | dark  simulator appearance
-# The simulator can't unfold from the command line; a resizable app session at the inner
-# display's size is the same mid-session resize. Pass TEST_RUNNER_OPENCODY_DUO_HOST_DIR=$DIR.
+# Usage: scripts/duo-host.sh <duo-sim-udid> <command…> — serves DuoHost requests (unfold, fold, shot <name>, light, dark) while <command> runs.
+# The simulator can't unfold from the command line; devicectl appResize at the inner display's 669x951 pt is the same mid-session resize.
 set -uo pipefail
 export DEVELOPER_DIR=${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}
 id=$1; shift
