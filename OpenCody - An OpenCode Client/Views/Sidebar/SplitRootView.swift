@@ -36,8 +36,12 @@ struct SplitRootView: View {
             )
             .navigationTitle("OpenCody")
             .navigationBarTitleDisplayMode(.inline)
+            .navigationSplitViewColumnWidth(min: 240, ideal: 270, max: 320)
         } detail: {
+            // An explicit minimum lets the sidebar sit beside a narrow detail column (iPhone Duo's
+            // inner display, 669 pt) instead of falling back to an overlay.
             detailContent
+                .navigationSplitViewColumnWidth(min: 320, ideal: 400)
         }
         .navigationSplitViewStyle(.balanced)
         .tint(Theme.Colors.cyberBlue)
