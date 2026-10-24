@@ -5,9 +5,8 @@ import XCTest
 ///
 /// Skipped unless `OPENCODY_LAYOUT_HOST`, `OPENCODY_LAYOUT_PORT`, `OPENCODY_LAYOUT_PASSWORD`,
 /// `OPENCODY_LAYOUT_PROJECT` (project name as listed) and `OPENCODY_LAYOUT_SESSION` (title of an
-/// existing session) are set — pass them with the `TEST_RUNNER_` prefix. The server is
-/// added once and kept, so later runs start connected; start from a fresh install
-/// or one that already has only this server.
+/// existing session) are set — pass them with the `TEST_RUNNER_` prefix. The test server
+/// stays saved, so the app must be freshly installed or have no other server.
 final class AdaptiveLayoutUITests: XCTestCase {
     private var app: XCUIApplication!
 
