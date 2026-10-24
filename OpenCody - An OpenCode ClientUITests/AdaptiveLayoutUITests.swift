@@ -4,9 +4,10 @@ import XCTest
 /// (iPhone Duo's inner display, iPad), and a compact ↔ regular switch keeping the chat.
 ///
 /// Skipped unless `OPENCODY_LAYOUT_HOST`, `OPENCODY_LAYOUT_PORT`, `OPENCODY_LAYOUT_PASSWORD`,
-/// `OPENCODY_LAYOUT_PROJECT` (folder name) and `OPENCODY_LAYOUT_SESSION` (title of an
+/// `OPENCODY_LAYOUT_PROJECT` (project name as listed) and `OPENCODY_LAYOUT_SESSION` (title of an
 /// existing session) are set — pass them with the `TEST_RUNNER_` prefix. The server is
-/// added once and kept, so later runs start connected.
+/// added once and kept, so later runs start connected; start from a fresh install
+/// or one that already has only this server.
 final class AdaptiveLayoutUITests: XCTestCase {
     private var app: XCUIApplication!
 
@@ -79,8 +80,9 @@ final class AdaptiveLayoutUITests: XCTestCase {
             if !test.isHittable { app.swipeUp() }
             test.tap()
             XCTAssertTrue(app.staticTexts["Connection successful"].waitForExistence(timeout: 15), "test connection")
+            // Offscreen form rows aren't in the hierarchy until scrolled to.
             let save = app.buttons["Save Server"]
-            if !save.isHittable { app.swipeUp() }
+            for _ in 0..<4 where !(save.exists && save.isHittable) { app.swipeUp() }
             save.tap()
             dismissPrompts()
         }
