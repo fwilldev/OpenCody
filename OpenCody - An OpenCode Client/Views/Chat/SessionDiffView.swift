@@ -54,6 +54,8 @@ struct SessionDiffView: View {
                 }
             }
             .navigationTitle("Session Diff")
+            // A subtitle, not a trailing bar item: on iPhone Duo the status bar sits at the top right.
+            .navigationSubtitle("\(diffs.count) file\(diffs.count == 1 ? "" : "s")")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 if showsCloseButton {
@@ -61,11 +63,6 @@ struct SessionDiffView: View {
                         Button("Close") { dismiss() }
                             .foregroundStyle(Theme.Colors.silver)
                     }
-                }
-                ToolbarItem(placement: .primaryAction) {
-                    Text("\(diffs.count) file\(diffs.count == 1 ? "" : "s")")
-                        .font(.caption)
-                        .foregroundStyle(Theme.Colors.silver)
                 }
             }
         }

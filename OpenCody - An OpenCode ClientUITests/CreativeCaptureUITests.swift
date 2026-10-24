@@ -89,7 +89,7 @@ final class CreativeCaptureUITests: XCTestCase {
 
     private func back() {
         // On iPad the first bar button can be the sidebar toggle.
-        let button = app.navigationBars.buttons["BackButton"].firstMatch
+        let button = app.buttons["BackButton"].firstMatch
         (button.exists ? button : app.navigationBars.buttons.element(boundBy: 0)).tap()
         sleep(1)
     }
@@ -119,7 +119,8 @@ final class CreativeCaptureUITests: XCTestCase {
         if isRegular {
             app.buttons["Add Server"].firstMatch.tap()
         } else {
-            app.navigationBars["Servers"].buttons["Add"].firstMatch.tap()
+            // iPhone Duo puts bar buttons in a vertical toolbar outside the navigation bar.
+            app.buttons["Add"].firstMatch.tap()
         }
         // Return ends editing, so the keyboard is gone for the form capture.
         type(serverName + "\n", into: app.textFields["server.name"])

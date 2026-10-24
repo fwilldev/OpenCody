@@ -49,6 +49,8 @@ struct TodoListView: View {
                 }
             }
             .navigationTitle("Todos")
+            // A subtitle, not a trailing bar item: on iPhone Duo the status bar sits at the top right.
+            .navigationSubtitle("\(todos.filter { $0.status == .pending || $0.status == .inProgress }.count) open")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 if showsCloseButton {
@@ -56,12 +58,6 @@ struct TodoListView: View {
                         Button("Close") { dismiss() }
                             .foregroundStyle(Theme.Colors.silver)
                     }
-                }
-                ToolbarItem(placement: .primaryAction) {
-                    let pending = todos.filter { $0.status == .pending || $0.status == .inProgress }.count
-                    Text("\(pending) open")
-                        .font(.caption)
-                        .foregroundStyle(Theme.Colors.silver)
                 }
             }
         }
