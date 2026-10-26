@@ -1,8 +1,6 @@
 import Foundation
 import UserNotifications
 
-// MARK: - SessionAlert
-
 /// Something on an OpenCode 2.x server the user should hear about. 1.x servers get none.
 nonisolated struct SessionAlert: Codable, Equatable, Sendable {
     /// Raw values are the notification category identifiers; keep them stable,
@@ -81,8 +79,6 @@ nonisolated struct SessionAlert: Codable, Equatable, Sendable {
     }
 }
 
-// MARK: - V2SessionState
-
 /// The parts of a 2.x `Session.Info` that decide whether it is unread.
 nonisolated struct V2SessionState: Equatable, Sendable {
     let id: String
@@ -113,8 +109,6 @@ nonisolated struct V2SessionState: Equatable, Sendable {
 
     var idleKey: String? { idle.map { "\(id)@\(Int64($0))" } }
 }
-
-// MARK: - NotificationLedger
 
 /// Remembers what was already notified across launches, so live events, catch-up
 /// and background refresh never post the same alert twice.
@@ -149,8 +143,6 @@ final class NotificationLedger {
         return true
     }
 }
-
-// MARK: - NotificationCatchUp
 
 /// Rebuilds missed alerts from server state, since `/api/event` has no replay.
 enum NotificationCatchUp {
@@ -219,8 +211,6 @@ enum NotificationCatchUp {
     }
 }
 
-// MARK: - DeepLink
-
 /// Where tapping a notification leads; carried in its `userInfo`.
 nonisolated struct DeepLink: Equatable, Sendable {
     let serverID: UUID
@@ -240,8 +230,6 @@ nonisolated struct DeepLink: Equatable, Sendable {
         self.init(serverID: server, directory: userInfo["directory"] as? String, sessionID: sessionID)
     }
 }
-
-// MARK: - NotificationContent
 
 enum NotificationContent {
     /// One request per alert, or a single summary for more than three.

@@ -51,8 +51,7 @@ final class SessionNotificationManager {
         if let open = router.selectedSession { await markViewed(open) }
     }
 
-    /// Tells the server the user saw the session's last run, as the OpenCode apps do,
-    /// so it no longer counts as unread there or in a later catch-up.
+    /// Reports the last run as seen, as the OpenCode apps do; otherwise catch-up would announce it.
     func markViewed(_ sessionID: String) async {
         guard let client = v2Client,
               let session = await Self.session(sessionID, client: client),
