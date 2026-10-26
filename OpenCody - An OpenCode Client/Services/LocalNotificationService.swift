@@ -38,9 +38,11 @@ final class LocalNotificationService {
 
     // MARK: - Posting
 
-    /// Post the alerts whose kind the user left switched on.
+    /// Post the alerts whose kind the user left switched on and no push already showed.
     func post(_ alerts: [SessionAlert], server: UUID, settings: NotificationSettings = .shared) async {
-        let enabled = alerts.filter { settings.isEnabled($0.kind) }
+        let delivered = await UNUserNotificationCenter.current().deliveredNotifications()
+            .compactMap { $0.request.content.userInfo["dedupe"] as? String }
+        let enabled = AlertKey.fresh(alerts.filter { settings.isEnabled($0.kind) }, delivered: delivered)
         for request in NotificationContent.requests(for: enabled, server: server) {
             do {
                 try await UNUserNotificationCenter.current().add(request)

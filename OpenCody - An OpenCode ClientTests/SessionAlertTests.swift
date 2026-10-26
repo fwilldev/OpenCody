@@ -223,7 +223,7 @@ final class SessionAlertTests: XCTestCase {
         let requests = NotificationContent.requests(for: [alert], server: server)
         let content = try XCTUnwrap(requests.first?.content)
         XCTAssertEqual(requests.first?.identifier, "ses_1@2000")
-        XCTAssertEqual(content.categoryIdentifier, "session.failed")
+        XCTAssertEqual(content.categoryIdentifier, "OC_SESSION")
         XCTAssertEqual(content.body, "Fix login: Rate limited")
         XCTAssertEqual(DeepLink(userInfo: content.userInfo),
                        DeepLink(serverID: server, directory: "/srv/repo", sessionID: "ses_1"))

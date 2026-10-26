@@ -3,19 +3,22 @@ import UserNotifications
 
 /// Something on an OpenCode 2.x server the user should hear about. 1.x servers get none.
 nonisolated struct SessionAlert: Codable, Equatable, Sendable {
-    /// Raw values are the notification category identifiers; keep them stable,
-    /// actionable push will register actions against them.
+    /// Raw values match the push message `type`.
     enum Kind: String, Codable, CaseIterable, Sendable {
         case finished = "session.finished"
         case failed = "session.failed"
         case permission = "permission.asked"
         case form = "form.asked"
+
+        var category: String { NotificationCategory.forType(rawValue) }
     }
 
     var kind: Kind
     var sessionID: String
     /// Permission or form ID, for requests.
     var requestID: String?
+    /// The session a request belongs to, which is where it is answered (may be a subagent).
+    var replySessionID: String?
     /// Error text, or the tool or question a request is about.
     var detail: String?
     var sessionTitle: String?
@@ -39,12 +42,12 @@ nonisolated struct SessionAlert: Codable, Equatable, Sendable {
             alert = SessionAlert(kind: .failed, sessionID: sessionID, detail: "Stopped after no activity.")
         case "permission.asked":
             alert = SessionAlert(kind: .permission, sessionID: sessionID, requestID: data["id"] as? String,
-                                 detail: permissionTitle(data))
+                                 replySessionID: sessionID, detail: permissionTitle(data))
         case "form.created":
             guard let form = data["form"] as? JSON else { return nil }
             let field = (form["fields"] as? [JSON])?.first
             alert = SessionAlert(kind: .form, sessionID: form["sessionID"] as? String ?? "",
-                                 requestID: form["id"] as? String,
+                                 requestID: form["id"] as? String, replySessionID: form["sessionID"] as? String,
                                  detail: field?["title"] as? String ?? form["title"] as? String)
         default:
             return nil
@@ -268,11 +271,21 @@ enum NotificationContent {
             content.body = alert.detail ?? "The agent needs your input."
         }
         content.sound = .default
-        content.categoryIdentifier = alert.kind.rawValue
+        content.categoryIdentifier = alert.kind.category
         content.threadIdentifier = alert.sessionID
-        var info: [String: Any] = ["serverID": server.uuidString, "sessionID": alert.sessionID]
-        if let directory = alert.directory { info["directory"] = directory }
+        // Same keys as decrypted pushes (`PushMessage.apply`).
+        var info: [String: Any] = ["serverID": server.uuidString, "sessionID": alert.sessionID, "dedupe": alert.key]
+        info["directory"] = alert.directory
+        info["requestID"] = alert.requestID
+        info["replySessionID"] = alert.replySessionID
         content.userInfo = info
         return content
+    }
+}
+
+extension AlertKey {
+    /// Alerts not already on screen, e.g. as a push that arrived first.
+    static func fresh(_ alerts: [SessionAlert], delivered: [String]) -> [SessionAlert] {
+        alerts.filter { alert in !delivered.contains { isDuplicate($0, alert.key) } }
     }
 }

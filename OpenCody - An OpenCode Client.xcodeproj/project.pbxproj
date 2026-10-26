@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		C0DE00012F6000000000000C /* OpenCodyNotificationService.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = C0DE00012F60000000000001 /* OpenCodyNotificationService.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		B01761B22F5981A600911C23 /* Launch Screen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = B01761B12F5981A600911C23 /* Launch Screen.storyboard */; };
 		B01761B42F59839100911C23 /* opencody.png in Resources */ = {isa = PBXBuildFile; fileRef = B01761B32F59839100911C23 /* opencody.png */; };
 		B05C611F2F51BF550058D14E /* MarkdownUI in Frameworks */ = {isa = PBXBuildFile; productRef = B05C611E2F51BF550058D14E /* MarkdownUI */; };
@@ -16,6 +17,13 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		C0DE00012F6000000000000D /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = B0CD5F012F4DFB2700E79BBB /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = C0DE00012F60000000000004;
+			remoteInfo = OpenCodyNotificationService;
+		};
 		B0CD5F192F4DFB2900E79BBB /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = B0CD5F012F4DFB2700E79BBB /* Project object */;
@@ -32,7 +40,22 @@
 		};
 /* End PBXContainerItemProxy section */
 
+/* Begin PBXCopyFilesBuildPhase section */
+		C0DE00012F6000000000000B /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				C0DE00012F6000000000000C /* OpenCodyNotificationService.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
+		C0DE00012F60000000000001 /* OpenCodyNotificationService.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = OpenCodyNotificationService.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		B01761B12F5981A600911C23 /* Launch Screen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = "Launch Screen.storyboard"; sourceTree = "<group>"; };
 		B01761B32F59839100911C23 /* opencody.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = opencody.png; sourceTree = "<group>"; };
 		B05C62052F56F8580058D14E /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = AppIcon.icon; sourceTree = "<group>"; };
@@ -43,6 +66,16 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		C0DE00012F60000000000002 /* NotificationService */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = NotificationService;
+			sourceTree = "<group>";
+		};
+		C0DE00012F60000000000003 /* PushShared */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = PushShared;
+			sourceTree = "<group>";
+		};
 		B0CD5F0B2F4DFB2700E79BBB /* OpenCody - An OpenCode Client */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = "OpenCody - An OpenCode Client";
@@ -61,6 +94,13 @@
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		C0DE00012F60000000000006 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		B0CD5F062F4DFB2700E79BBB /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -98,6 +138,8 @@
 				B0CD5F0B2F4DFB2700E79BBB /* OpenCody - An OpenCode Client */,
 				B0CD5F1B2F4DFB2900E79BBB /* OpenCody - An OpenCode ClientTests */,
 				B0CD5F252F4DFB2900E79BBB /* OpenCody - An OpenCode ClientUITests */,
+				C0DE00012F60000000000002 /* NotificationService */,
+				C0DE00012F60000000000003 /* PushShared */,
 				B0CD5F0A2F4DFB2700E79BBB /* Products */,
 			);
 			sourceTree = "<group>";
@@ -108,6 +150,7 @@
 				B0CD5F092F4DFB2700E79BBB /* OpenCody - An OpenCode Client.app */,
 				B0CD5F182F4DFB2900E79BBB /* OpenCody - An OpenCode ClientTests.xctest */,
 				B0CD5F222F4DFB2900E79BBB /* OpenCody - An OpenCode ClientUITests.xctest */,
+				C0DE00012F60000000000001 /* OpenCodyNotificationService.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -122,13 +165,16 @@
 				B0CD5F052F4DFB2700E79BBB /* Sources */,
 				B0CD5F062F4DFB2700E79BBB /* Frameworks */,
 				B0CD5F072F4DFB2700E79BBB /* Resources */,
+				C0DE00012F6000000000000B /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				C0DE00012F6000000000000E /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				B0CD5F0B2F4DFB2700E79BBB /* OpenCody - An OpenCode Client */,
+				C0DE00012F60000000000003 /* PushShared */,
 			);
 			name = "OpenCody - An OpenCode Client";
 			packageProductDependencies = (
@@ -186,6 +232,29 @@
 			productReference = B0CD5F222F4DFB2900E79BBB /* OpenCody - An OpenCode ClientUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
+		C0DE00012F60000000000004 /* OpenCodyNotificationService */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = C0DE00012F60000000000008 /* Build configuration list for PBXNativeTarget "OpenCodyNotificationService" */;
+			buildPhases = (
+				C0DE00012F60000000000005 /* Sources */,
+				C0DE00012F60000000000006 /* Frameworks */,
+				C0DE00012F60000000000007 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				C0DE00012F60000000000002 /* NotificationService */,
+				C0DE00012F60000000000003 /* PushShared */,
+			);
+			name = OpenCodyNotificationService;
+			packageProductDependencies = (
+			);
+			productName = OpenCodyNotificationService;
+			productReference = C0DE00012F60000000000001 /* OpenCodyNotificationService.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -196,6 +265,9 @@
 				LastSwiftUpdateCheck = 2620;
 				LastUpgradeCheck = 2620;
 				TargetAttributes = {
+					C0DE00012F60000000000004 = {
+						CreatedOnToolsVersion = 26.2;
+					};
 					B0CD5F082F4DFB2700E79BBB = {
 						CreatedOnToolsVersion = 26.2;
 					};
@@ -231,6 +303,7 @@
 				B0CD5F082F4DFB2700E79BBB /* OpenCody - An OpenCode Client */,
 				B0CD5F172F4DFB2900E79BBB /* OpenCody - An OpenCode ClientTests */,
 				B0CD5F212F4DFB2900E79BBB /* OpenCody - An OpenCode ClientUITests */,
+				C0DE00012F60000000000004 /* OpenCodyNotificationService */,
 			);
 		};
 /* End PBXProject section */
@@ -254,6 +327,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		B0CD5F202F4DFB2900E79BBB /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C0DE00012F60000000000007 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -284,6 +364,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		C0DE00012F60000000000005 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -296,6 +383,11 @@
 			isa = PBXTargetDependency;
 			target = B0CD5F082F4DFB2700E79BBB /* OpenCody - An OpenCode Client */;
 			targetProxy = B0CD5F232F4DFB2900E79BBB /* PBXContainerItemProxy */;
+		};
+		C0DE00012F6000000000000E /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = C0DE00012F60000000000004 /* OpenCodyNotificationService */;
+			targetProxy = C0DE00012F6000000000000D /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -427,6 +519,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
+				CODE_SIGN_ENTITLEMENTS = OpenCody.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = Q738AAV584;
@@ -464,6 +557,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
+				CODE_SIGN_ENTITLEMENTS = OpenCody.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = Q738AAV584;
@@ -579,6 +673,60 @@
 			};
 			name = Release;
 		};
+		C0DE00012F60000000000009 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = NotificationService.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = Q738AAV584;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "NotificationService-Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = OpenCodyNotificationService;
+				IPHONEOS_DEPLOYMENT_TARGET = 26;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.10;
+				PRODUCT_BUNDLE_IDENTIFIER = wss.OpenCody.NotificationService;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.9;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		C0DE00012F6000000000000A /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = NotificationService.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = Q738AAV584;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "NotificationService-Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = OpenCodyNotificationService;
+				IPHONEOS_DEPLOYMENT_TARGET = 26;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.10;
+				PRODUCT_BUNDLE_IDENTIFIER = wss.OpenCody.NotificationService;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.9;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -614,6 +762,15 @@
 			buildConfigurations = (
 				B0CD5F332F4DFB2900E79BBB /* Debug */,
 				B0CD5F342F4DFB2900E79BBB /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		C0DE00012F60000000000008 /* Build configuration list for PBXNativeTarget "OpenCodyNotificationService" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C0DE00012F60000000000009 /* Debug */,
+				C0DE00012F6000000000000A /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
