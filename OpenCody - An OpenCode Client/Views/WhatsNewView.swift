@@ -5,7 +5,7 @@ import SwiftUI
 /// Release notes shown once per release, the first time the updated app launches.
 enum WhatsNew {
     /// The release these notes describe. Bump it (and the notes) to show the sheet again.
-    static let version = "1.9"
+    static let version = "1.10"
 
     private static let seenKey = "whatsNew_lastSeenVersion"
 
@@ -35,9 +35,7 @@ struct WhatsNewView: View {
                         .padding(.top, Theme.Spacing.xl)
 
                     VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-                        item("Made for iPhone Duo: the outer display keeps the familiar iPhone layout, unfold it and your projects and chat sit side by side.")
-                        item("Folding, unfolding and resizing keep your place: the open chat, its scroll position and the message you were typing.")
-                        item("On iPad, resizing the window in Split View no longer jumps back to the project list.")
+                        item("Windows servers: folder paths like C:\\Projects\\App no longer get a leading slash. Sessions created before this update keep the broken path, so start a new session in those projects.")
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
