@@ -44,8 +44,6 @@ final class PushTests: XCTestCase {
         XCTAssertEqual(try PushCrypto.open(a, key: key, deviceId: deviceId), Data("x".utf8))
     }
 
-    // MARK: - Pairing string (§3)
-
     func testDecodesSpecExamplePairingString() throws {
         let example = "eyJ2IjoxLCJyZWxheSI6Imh0dHBzOi8vcHVzaC53aWxsc29mdHdhcmVzb2x1dGlvbnMuZGUiLCJkZXZpY2VJZCI6IkFBRUNBd1FGQmdjSUNRb0xEQTBPRHciLCJzZWNyZXQiOiJjMlZqY21WMExXNXZkQzF5WldGc0xXVjRZVzF3YkdVdGIyNXNlUzB4TWpNIiwia2V5IjoiQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQSJ9"
         let fields = try XCTUnwrap(PairingString.decode(example))

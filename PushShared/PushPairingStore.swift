@@ -11,7 +11,6 @@ nonisolated struct PushPairing: Codable, Equatable, Sendable {
     /// APNs token and environment last sent to the relay.
     var token: String
     var env: String
-    /// The relay no longer knows this device (401); the user has to pair again.
     var broken = false
 
     var pairingString: String {
