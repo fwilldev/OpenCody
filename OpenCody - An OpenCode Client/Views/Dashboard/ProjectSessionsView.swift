@@ -177,7 +177,7 @@ struct ProjectSessionsView: View {
     // MARK: - Data Loading
 
     private var directory: String? {
-        projectPath.hasPrefix("/") ? projectPath : "/\(projectPath)"
+        ServerPath.isAbsolute(projectPath) ? projectPath : "/\(projectPath)"
     }
 
     private func reload() async {

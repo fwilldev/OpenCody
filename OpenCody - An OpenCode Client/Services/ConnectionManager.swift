@@ -277,7 +277,7 @@ final class ConnectionManager {
     /// If changed, restarts SSE listening for the active server.
     func setActiveEventDirectory(_ directory: String?) {
         var normalized = directory?.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let value = normalized, !value.isEmpty, !value.hasPrefix("/") {
+        if let value = normalized, !value.isEmpty, !ServerPath.isAbsolute(value) {
             normalized = "/" + value
         }
         guard normalized != activeEventDirectory else { return }

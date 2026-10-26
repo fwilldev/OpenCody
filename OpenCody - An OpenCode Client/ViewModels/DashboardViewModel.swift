@@ -228,7 +228,7 @@ final class DashboardViewModel {
             throw OpenCodeError.connectionFailed("No active server connection")
         }
 
-        let normalizedPath = normalizePath(path)
+        let normalizedPath = ServerPath.normalized(path)
 
         // Auto-reopen if the project was previously closed
         if let serverID = connectionManager.activeServerID {
@@ -445,12 +445,5 @@ final class DashboardViewModel {
                 return false
             }
         }
-    }
-
-    private func normalizePath(_ path: String) -> String {
-        URL(fileURLWithPath: path)
-            .standardizedFileURL
-            .resolvingSymlinksInPath()
-            .path
     }
 }
