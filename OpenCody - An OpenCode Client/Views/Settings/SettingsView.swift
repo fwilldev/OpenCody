@@ -78,7 +78,7 @@ struct SettingsView: View {
 
                     // MARK: - Notifications
                     SettingsSection(title: "Notifications") {
-                        Text("Notifications require OpenCody to stay active. If iOS closes the app in background, alerts may be delayed or missed.")
+                        Text(notificationsHint)
                             .font(Theme.Fonts.caption)
                             .foregroundStyle(Theme.Colors.silver)
                             .padding(.bottom, Theme.Spacing.xs)
@@ -243,6 +243,15 @@ struct SettingsView: View {
     }
 
     // MARK: - Helpers
+
+    /// Notifications only come from OpenCode 2.x servers.
+    private var notificationsHint: String {
+        let active = serverStore.servers.first { $0.id == connectionManager.activeServerID }
+        if active?.apiVersion == .v1 {
+            return "Notifications need OpenCode 2 or later. This server runs OpenCode 1.x."
+        }
+        return "Alerts arrive while OpenCody is open. Anything missed shows up when you return; background checks run when iOS allows."
+    }
 
     private var serverDetail: String {
         let count = serverStore.servers.count
