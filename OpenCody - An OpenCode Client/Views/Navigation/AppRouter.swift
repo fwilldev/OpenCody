@@ -36,6 +36,7 @@ final class AppRouter {
     /// The server list's edit and pairing sheets, for the same reason.
     var selectedServer: ServerConnection?
     var pairingServer: ServerConnection?
+    var pushServer: ServerConnection?
 
     struct NewSessionRequest: Identifiable {
         let id = UUID()

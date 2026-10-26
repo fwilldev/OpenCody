@@ -120,6 +120,18 @@ struct ServerFormView: View {
                     }
                 }
 
+                if let server, server.apiVersion == .v2 {
+                    Section {
+                        NavigationLink {
+                            PushSetupView(server: server)
+                        } label: {
+                            Label("Push Notifications", systemImage: "bell.badge")
+                        }
+                    } footer: {
+                        Text("Alerts from this server while OpenCody is closed.")
+                    }
+                }
+
                 if server != nil {
                     Section {
                         Button("Delete Server", systemImage: "trash", role: .destructive) {

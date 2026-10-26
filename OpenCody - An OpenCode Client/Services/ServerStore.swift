@@ -22,6 +22,7 @@ final class ServerStoreModel: ObservableObject {
     }
 
     func delete(id: UUID) {
+        Task { await PushService.shared.unpair(server: id) }
         servers.removeAll { $0.id == id }
         ServerStore.shared.save(servers)
     }

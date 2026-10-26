@@ -47,6 +47,16 @@ struct ServerListView: View {
         .sheet(item: Bindable(router).pairingServer) { server in
             PairDeviceView(server: server)
         }
+        .sheet(item: Bindable(router).pushServer) { server in
+            NavigationStack {
+                PushSetupView(server: server)
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Done") { router.pushServer = nil }
+                        }
+                    }
+            }
+        }
         .confirmationDialog(
             "Delete Server",
             isPresented: Binding(get: { deletingServer != nil }, set: { if !$0 { deletingServer = nil } }),
@@ -183,6 +193,9 @@ struct ServerListView: View {
             if server.apiVersion == .v2 {
                 Button("Pair a Device", systemImage: "link.badge.plus") {
                     router.pairingServer = server
+                }
+                Button("Push Notifications", systemImage: "bell.badge") {
+                    router.pushServer = server
                 }
             }
 

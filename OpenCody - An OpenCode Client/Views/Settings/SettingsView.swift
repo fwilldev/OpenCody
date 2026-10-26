@@ -250,7 +250,7 @@ struct SettingsView: View {
         if active?.apiVersion == .v1 {
             return "Notifications need OpenCode 2 or later. This server runs OpenCode 1.x."
         }
-        return "Alerts arrive while OpenCody is open. Anything missed shows up when you return; background checks run when iOS allows."
+        return "Alerts arrive while OpenCody is open, and anything missed shows up when you return. For alerts while it's closed, turn on Push Notifications for your server under Servers."
     }
 
     private var serverDetail: String {
