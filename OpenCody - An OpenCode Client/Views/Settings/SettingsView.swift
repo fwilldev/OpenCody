@@ -4,6 +4,7 @@
 //
 
 import SwiftUI
+import UserNotifications
 
 /// Root settings screen shown in the Settings tab.
 /// Sections: Servers, Providers, MCP Servers, Server Config, About.
@@ -11,7 +12,10 @@ struct SettingsView: View {
     let connectionManager: ConnectionManager
 
     @EnvironmentObject private var serverStore: ServerStoreModel
-    @Bindable private var notificationSettings = NotificationSettings.shared
+    @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.openURL) private var openURL
+    /// `nil` until read; re-read on return from the Settings app.
+    @State private var notificationStatus: UNAuthorizationStatus?
     @AppStorage("appearancePreference") private var appearancePreference: String = AppearancePreference.system.rawValue
 
     var body: some View {
@@ -78,48 +82,49 @@ struct SettingsView: View {
 
                     // MARK: - Notifications
                     SettingsSection(title: "Notifications") {
-                        Text(notificationsHint)
+                        Text("Notifications need OpenCode 2 and the opencody-notify plugin on the server. Pair each server below.")
                             .font(Theme.Fonts.caption)
                             .foregroundStyle(Theme.Colors.silver)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.bottom, Theme.Spacing.xs)
 
-                        SettingsToggleRow(
-                            icon: "checkmark.circle",
-                            iconColor: Theme.Colors.neonGreen,
-                            title: "Turn Complete",
-                            detail: "When a session finishes",
-                            isOn: $notificationSettings.turnCompleteEnabled
-                        )
+                        HStack {
+                            SettingsRow(
+                                icon: notificationsAllowed ? "bell.fill" : "bell.slash",
+                                iconColor: notificationsAllowed ? Theme.Colors.neonGreen : Theme.Colors.neonOrange,
+                                title: "Allow Notifications",
+                                detail: permissionDetail,
+                                showChevron: false
+                            )
+                            if notificationStatus == .notDetermined {
+                                Button("Allow") { Task { await requestNotifications() } }
+                                    .buttonStyle(.bordered)
+                                    .tint(Theme.Colors.cyberBlue)
+                            } else if notificationStatus == .denied {
+                                Button("Settings") {
+                                    openURL(URL(string: UIApplication.openNotificationSettingsURLString)!)
+                                }
+                                .buttonStyle(.bordered)
+                                .tint(Theme.Colors.cyberBlue)
+                            }
+                        }
 
-                        SettingsDivider()
-
-                        SettingsToggleRow(
-                            icon: "exclamationmark.triangle",
-                            iconColor: Theme.Colors.neonOrange,
-                            title: "Errors",
-                            detail: "Session error alerts",
-                            isOn: $notificationSettings.errorsEnabled
-                        )
-
-                        SettingsDivider()
-
-                        SettingsToggleRow(
-                            icon: "lock.shield",
-                            iconColor: Theme.Colors.electricPurple,
-                            title: "Permissions",
-                            detail: "Tool approval requests",
-                            isOn: $notificationSettings.permissionsEnabled
-                        )
-
-                        SettingsDivider()
-
-                        SettingsToggleRow(
-                            icon: "questionmark.bubble",
-                            iconColor: Theme.Colors.cyberBlue,
-                            title: "Questions",
-                            detail: "Agent questions",
-                            isOn: $notificationSettings.questionsEnabled
-                        )
+                        ForEach(serverStore.servers) { server in
+                            let status = PushStatus(apiVersion: server.apiVersion, pairing: PushService.shared.pairing(for: server.id))
+                            SettingsDivider()
+                            NavigationLink(value: AppRouter.SettingsRoute.push(server.id)) {
+                                SettingsRow(
+                                    icon: status == .paired ? "bell.badge" : "server.rack",
+                                    iconColor: color(for: status),
+                                    title: server.name,
+                                    detail: status.label
+                                )
+                            }
+                        }
+                    }
+                    .task(id: scenePhase) {
+                        guard scenePhase == .active else { return }
+                        notificationStatus = await UNUserNotificationCenter.current().notificationSettings().authorizationStatus
                     }
 
                     // MARK: - Support
@@ -237,6 +242,10 @@ struct SettingsView: View {
             case .tipJar: TipJarView()
             case .licenses: LicensesView()
             case .privacy: PrivacyPolicyView()
+            case .push(let id):
+                if let server = serverStore.servers.first(where: { $0.id == id }) {
+                    PushSetupView(server: server)
+                }
             }
         }
         .navigationBarTitleDisplayMode(.large)
@@ -244,13 +253,30 @@ struct SettingsView: View {
 
     // MARK: - Helpers
 
-    /// Notifications only come from OpenCode 2.x servers.
-    private var notificationsHint: String {
-        let active = serverStore.servers.first { $0.id == connectionManager.activeServerID }
-        if active?.apiVersion == .v1 {
-            return "Notifications need OpenCode 2 or later. This server runs OpenCode 1.x."
+    private var notificationsAllowed: Bool {
+        [.authorized, .provisional, .ephemeral].contains(notificationStatus)
+    }
+
+    private var permissionDetail: String {
+        switch notificationStatus {
+        case .notDetermined: "Not asked yet"
+        case .denied: "Off. Turn them on in the Settings app."
+        case nil: " "
+        default: "On"
         }
-        return "Alerts arrive while OpenCody is open, and anything missed shows up when you return. For alerts while it's closed, turn on Push Notifications for your server under Servers."
+    }
+
+    private func color(for status: PushStatus) -> Color {
+        switch status {
+        case .paired: Theme.Colors.neonGreen
+        case .broken: Theme.Colors.neonOrange
+        case .off, .unsupported: Theme.Colors.smoke
+        }
+    }
+
+    private func requestNotifications() async {
+        _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge])
+        notificationStatus = await UNUserNotificationCenter.current().notificationSettings().authorizationStatus
     }
 
     private var serverDetail: String {
@@ -363,49 +389,6 @@ private struct SettingsRow: View {
                     .foregroundStyle(Theme.Colors.smoke)
             }
         }
-        .padding(.vertical, 4)
-        .contentShape(Rectangle())
-    }
-}
-
-// MARK: - SettingsToggleRow
-
-/// Toggle row matching the visual style of SettingsRow — icon, title, detail, toggle.
-private struct SettingsToggleRow: View {
-    let icon: String
-    let iconColor: Color
-    let title: String
-    let detail: String?
-    @Binding var isOn: Bool
-
-    var body: some View {
-        // The row is the toggle's label, so VoiceOver reads the title with the switch.
-        Toggle(isOn: $isOn) {
-            HStack(spacing: Theme.Spacing.md) {
-                // Icon container
-                ZStack {
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill(iconColor.opacity(0.12))
-                        .frame(width: 40, height: 40)
-                    Image(systemName: icon)
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(iconColor)
-                }
-
-                // Text content
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(title)
-                        .font(Theme.Fonts.body)
-                        .foregroundStyle(Theme.Colors.cloud)
-                    if let detail {
-                        Text(detail)
-                            .font(Theme.Fonts.caption)
-                            .foregroundStyle(Theme.Colors.silver)
-                    }
-                }
-            }
-        }
-        .tint(Theme.Colors.cyberBlue)
         .padding(.vertical, 4)
         .contentShape(Rectangle())
     }

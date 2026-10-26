@@ -20,6 +20,7 @@ final class AppRouter {
     /// Settings screens, pushed by value so `settingsPath` (and a resize) keeps them.
     enum SettingsRoute: Hashable {
         case servers, providers, mcp, tipJar, licenses, privacy
+        case push(UUID)
     }
 
     var selectedTab: TabItem = .dashboard

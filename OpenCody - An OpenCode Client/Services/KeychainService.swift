@@ -34,18 +34,6 @@ enum KeychainError: Error, LocalizedError {
 
 struct KeychainService {
     private static let serviceName = "com.opencody.server"
-    /// Background refresh runs while the device is locked; it needs the passwords then.
-    private static let accessibility = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-
-    /// Moves passwords saved with the default (unlocked only) to `accessibility`.
-    /// Must run while the device is unlocked.
-    static func allowBackgroundAccess() {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: serviceName,
-        ]
-        SecItemUpdate(query as CFDictionary, [kSecAttrAccessible as String: accessibility] as CFDictionary)
-    }
 
     // MARK: - Save password
 
@@ -64,7 +52,6 @@ struct KeychainService {
 
         let attributes: [String: Any] = [
             kSecValueData as String: data,
-            kSecAttrAccessible as String: accessibility,
         ]
 
         // Try to update an existing item first
@@ -74,7 +61,6 @@ struct KeychainService {
             // Item doesn't exist yet — add it
             var addQuery = query
             addQuery[kSecValueData as String] = data
-            addQuery[kSecAttrAccessible as String] = accessibility
 
             let addStatus = SecItemAdd(addQuery as CFDictionary, nil)
             guard addStatus == errSecSuccess else {

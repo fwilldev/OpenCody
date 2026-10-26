@@ -21,9 +21,8 @@ final class NotificationService: UNNotificationServiceExtension {
         message.apply(to: decrypted, serverID: pairing.serverID)
         self.content = decrypted
 
-        // Recorded even if the user swipes the push away, so the app's catch-up stays silent.
-        // If the app already announced it from its live connection, keep the push quiet
-        // and drop the older copy so the list holds one.
+        // A push shown before (re-delivered, or an old plugin's twin) stays quiet
+        // and replaces the older copy, so the list holds one.
         let key = AlertKey.forPush(message)
         let known = !NotificationLedger().insert(key)
         UNUserNotificationCenter.current().getDeliveredNotifications { delivered in

@@ -314,14 +314,6 @@ actor V2EventTranslator {
         default:
             break
         }
-
-        // Without a directory, so alerts pass the folder filter: they cover every project.
-        if let alert = SessionAlert.from(v2Event: type, data: payload),
-           let encoded = try? JSONEncoder().encode(alert),
-           let properties = try? JSONSerialization.jsonObject(with: encoded),
-           let string = V2Adapter.string(from: ["payload": ["type": "opencody.alert", "properties": properties] as JSON]) {
-            out.append(string)
-        }
         return out
     }
 
