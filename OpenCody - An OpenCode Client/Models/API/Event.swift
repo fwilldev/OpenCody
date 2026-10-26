@@ -101,6 +101,9 @@ enum SSEEvent: Sendable {
     /// generation progress without matching ~30 individual event names.
     case sessionStreamEvent(SessionStreamPayload)
 
+    /// OpenCode 2.x only: an event the user may be notified about, from any project.
+    case sessionAlert(SessionAlert)
+
     // Unknown catch-all
     case unknown(eventName: String, data: String)
 
@@ -297,6 +300,9 @@ enum SSEEvent: Sendable {
 
         case "global.disposed":
             return .globalDisposed
+
+        case "opencody.alert":
+            return .sessionAlert(try decoder.decode(EventPayload<SessionAlert>.self, from: jsonData).properties)
 
         default:
             // The `session.next.*` family carries streaming progress. They are

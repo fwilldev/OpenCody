@@ -212,7 +212,10 @@ final class V2AdapterTests: XCTestCase {
                 let payload = try XCTUnwrap(object["payload"] as? [String: Any])
                 let name = try XCTUnwrap(payload["type"] as? String)
                 let data = try JSONSerialization.data(withJSONObject: payload)
-                output.append(try SSEEvent.parse(eventName: name, data: String(decoding: data, as: UTF8.self)))
+                let event = try SSEEvent.parse(eventName: name, data: String(decoding: data, as: UTF8.self))
+                // Alerts are covered by SessionAlertTests.
+                if case .sessionAlert = event { continue }
+                output.append(event)
             }
         }
         return output

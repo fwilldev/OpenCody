@@ -102,3 +102,15 @@ final class ServerConnection: Identifiable, Codable {
         try container.encode(apiVersion, forKey: .apiVersion)
     }
 }
+
+extension ServerConnection {
+    /// A client with the saved password, for work outside a live connection.
+    func makeAPIClient() -> APIClient {
+        APIClient(
+            baseURL: baseURL,
+            username: username,
+            password: (try? KeychainService.retrieve(for: keychainIdentifier)) ?? "",
+            apiVersion: apiVersion
+        )
+    }
+}

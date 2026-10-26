@@ -5,14 +5,11 @@
 
 import BackgroundTasks
 import Foundation
-import UserNotifications
 
 /// Manages BGAppRefreshTask registration and handling.
 ///
-/// On a background refresh the service polls the active server's session list
-/// and fires a local notification if any sessions are still running (busy), prompting
-/// the user to return to the app — where the SSE stream will surface any pending
-/// permission requests or completed results.
+/// A background refresh catches up on OpenCode 2.x servers: finished or failed sessions
+/// and open permission requests and questions become notifications.
 ///
 /// Background execution on iOS Simulator is not guaranteed — this is best-effort.
 /// The app must declare `BGTaskSchedulerPermittedIdentifiers` in Info.plist and
@@ -28,14 +25,6 @@ final class BackgroundRefreshService {
     static let taskIdentifier = "com.opencody.bgrefresh"
     /// Minimum interval between background refreshes (15 minutes).
     private static let minimumFetchInterval: TimeInterval = 15 * 60
-
-    // MARK: - APIClient Provider
-
-    /// Closure set by the App entry point to provide the currently active APIClient.
-    /// Avoids a direct dependency on ConnectionManager.
-    var apiClientProvider: (() -> APIClient?)?
-
-    private var activeAPIClient: APIClient? { apiClientProvider?() }
 
     // MARK: - Registration
 
@@ -88,7 +77,7 @@ final class BackgroundRefreshService {
         scheduleAppRefresh()
 
         let workTask = Task {
-            await performRefresh()
+            await catchUp(viewing: nil)
         }
 
         task.expirationHandler = {
@@ -99,44 +88,21 @@ final class BackgroundRefreshService {
         task.setTaskCompleted(success: !workTask.isCancelled)
     }
 
-    // MARK: - Refresh Logic
+    // MARK: - Catch-up
 
-    /// Poll the active server for running sessions; notify the user to check on activity.
-    private func performRefresh() async {
-        guard let apiClient = activeAPIClient else {
-            print("[BackgroundRefreshService] No active API client - skipping refresh.")
-            return
-        }
-
-        do {
-            let sessionAPI = SessionAPI(client: apiClient)
-            let sessions = try await sessionAPI.list()
-            let statusMap = try await sessionAPI.status()
-
-            let busySessions = sessions.filter { session in
-                if case .busy = statusMap[session.id] { return true }
-                return false
-            }
-
-            if !busySessions.isEmpty {
-                let content = UNMutableNotificationContent()
-                content.title = "OpenCody"
-                content.body = busySessions.count == 1
-                    ? "1 session is still running. Tap to check."
-                    : "\(busySessions.count) sessions are still running. Tap to check."
-                content.sound = .default
-
-                let notifRequest = UNNotificationRequest(
-                    identifier: "bg-refresh-\(Int(Date().timeIntervalSince1970))",
-                    content: content,
-                    trigger: nil
+    /// Posts what every saved 2.x server finished or asked while nobody watched. Builds
+    /// its own clients, so it also works after iOS launched the app in the background.
+    func catchUp(viewing: String?) async {
+        for server in ServerStore.shared.load() where server.apiVersion == .v2 {
+            guard !Task.isCancelled else { return }
+            do {
+                let alerts = try await NotificationCatchUp.fetch(
+                    client: server.makeAPIClient(), server: server.id, viewing: viewing, ledger: NotificationLedger()
                 )
-                try? await UNUserNotificationCenter.current().add(notifRequest)
+                await LocalNotificationService.shared.post(alerts, server: server.id)
+            } catch {
+                print("[BackgroundRefreshService] Catch-up failed for \(server.name): \(error.localizedDescription)")
             }
-
-            print("[BackgroundRefreshService] Refresh complete. Busy sessions: \(busySessions.count)")
-        } catch {
-            print("[BackgroundRefreshService] Refresh error: \(error.localizedDescription)")
         }
     }
 }

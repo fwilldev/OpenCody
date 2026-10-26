@@ -103,6 +103,22 @@ final class SessionAlertTests: XCTestCase {
                        ["session.finished", "session.failed", "permission.asked", "form.asked"])
     }
 
+    func testTranslatorEmitsAlertsForEveryFolder() async throws {
+        let client = APIClient(baseURL: "http://127.0.0.1:9", username: "", password: "", apiVersion: .v2)
+        let raw = #"{"id":"evt_1","type":"permission.asked","location":{"directory":"/other"},"data":{"id":"per_1","sessionID":"ses_1","action":"edit","resources":["a.txt"]}}"#
+        let output = await V2EventTranslator(client: client).translate(raw)
+        let wrapped = try XCTUnwrap(output.last)
+        let object = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(wrapped.utf8)) as? JSON)
+        XCTAssertNil(object["directory"], "the directory filter must not drop alerts")
+        let payload = try XCTUnwrap(object["payload"] as? JSON)
+        let data = try JSONSerialization.data(withJSONObject: payload)
+        let event = try SSEEvent.parse(eventName: try XCTUnwrap(payload["type"] as? String),
+                                       data: String(decoding: data, as: UTF8.self))
+        guard case .sessionAlert(let alert) = event else { return XCTFail("Expected alert, got \(event)") }
+        XCTAssertEqual(alert.requestID, "per_1")
+        XCTAssertEqual(alert.detail, "edit: a.txt")
+    }
+
     // MARK: - Resolving against the session
 
     func testSubagentRunsAreNotNotified() throws {

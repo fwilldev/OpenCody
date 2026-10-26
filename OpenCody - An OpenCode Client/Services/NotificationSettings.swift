@@ -49,6 +49,15 @@ final class NotificationSettings {
         didSet { UserDefaults.standard.set(questionsEnabled, forKey: Keys.questions) }
     }
 
+    func isEnabled(_ kind: SessionAlert.Kind) -> Bool {
+        switch kind {
+        case .finished: turnCompleteEnabled
+        case .failed: errorsEnabled
+        case .permission: permissionsEnabled
+        case .form: questionsEnabled
+        }
+    }
+
     // MARK: - Init
 
     private init() {
