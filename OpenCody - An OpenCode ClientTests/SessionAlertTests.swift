@@ -156,6 +156,25 @@ final class SessionAlertTests: XCTestCase {
         XCTAssertFalse(ledger.insert("d"))
     }
 
+    func testLedgerMovesIntoTheAppGroupOnce() throws {
+        let legacy = try XCTUnwrap(UserDefaults(suiteName: "SessionAlertTests.legacy"))
+        legacy.removePersistentDomain(forName: "SessionAlertTests.legacy")
+        legacy.set(["ses_1@2000"], forKey: "notification.ledger")
+        legacy.set([server.uuidString], forKey: "notification.ledger.baselines")
+        NotificationLedger(defaults: defaults).insert("req:per_1")
+
+        NotificationLedger.migrate(from: legacy, to: defaults)
+        let ledger = NotificationLedger(defaults: defaults)
+        XCTAssertFalse(ledger.insert("ses_1@2000"))
+        XCTAssertFalse(ledger.insert("req:per_1"))
+        XCTAssertFalse(ledger.markBaseline(server))
+        XCTAssertNil(legacy.array(forKey: "notification.ledger"))
+
+        legacy.set(["ses_9@1"], forKey: "notification.ledger")
+        NotificationLedger.migrate(from: legacy, to: defaults)
+        XCTAssertTrue(ledger.insert("ses_9@1"), "migrates only once")
+    }
+
     // MARK: - Catch-up
 
     private func plan(_ sessions: [JSON], permissions: [JSON] = [], forms: [JSON] = [], viewing: String? = nil) -> [SessionAlert] {
@@ -215,6 +234,14 @@ final class SessionAlertTests: XCTestCase {
         XCTAssertEqual(plan([session("ses_1")]), [])
     }
 
+    func testDeliveredPushSuppressesCatchUp() {
+        _ = plan([])
+        // What the Notification Service Extension records, even if the user swipes the push away.
+        NotificationLedger(defaults: defaults).insert("ses_1@2000")
+        NotificationLedger(defaults: defaults).insert("~ses_2@2400")
+        XCTAssertEqual(plan([session("ses_1"), session("ses_2"), session("ses_3")]).map(\.sessionID), ["ses_3"])
+    }
+
     // MARK: - Content
 
     func testRequestsCarryDeepLink() throws {
@@ -222,7 +249,7 @@ final class SessionAlertTests: XCTestCase {
                                  sessionTitle: "Fix login", directory: "/srv/repo", key: "ses_1@2000")
         let requests = NotificationContent.requests(for: [alert], server: server)
         let content = try XCTUnwrap(requests.first?.content)
-        XCTAssertEqual(requests.first?.identifier, "ses_1@2000")
+        XCTAssertEqual(requests.first?.identifier, AlertKey.identifier("ses_1@2000"))
         XCTAssertEqual(content.categoryIdentifier, "OC_SESSION")
         XCTAssertEqual(content.body, "Fix login: Rate limited")
         XCTAssertEqual(DeepLink(userInfo: content.userInfo),

@@ -28,13 +28,9 @@ final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
         let sessionID = info["sessionID"] as? String
         let viewing = await MainActor.run { viewingSessionID() }
         if sessionID != nil && sessionID == viewing { return [] }
-        // A push the live connection already announced.
-        if info["opencody"] != nil, let key = info["dedupe"] as? String {
-            let shown = await center.deliveredNotifications().filter { $0.request.identifier != notification.request.identifier }
-            if shown.contains(where: { ($0.request.content.userInfo["dedupe"] as? String).map { AlertKey.isDuplicate($0, key) } ?? false }) {
-                return []
-            }
-        }
+        // A push the live connection already announced; the extension marked it passive
+        // and removed the local copy, so it only takes that place in the list.
+        if info["opencody"] != nil, notification.request.content.interruptionLevel == .passive { return [.list] }
         return [.banner, .sound, .list]
     }
 

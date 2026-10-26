@@ -98,6 +98,8 @@ nonisolated struct PushMessage: Codable, Equatable, Sendable {
     var title: String?
     var text: String
     var requestID: String?
+    /// Dedupe key from plugin 0.2.0 on, identical to the local alert's (§5.1).
+    var key: String?
     var ts: Double
 
     static func decode(_ data: Data) throws -> PushMessage {
@@ -154,25 +156,34 @@ nonisolated enum NotificationCategory {
 }
 
 /// Dedupe keys shared by local alerts and pushes, stored in `userInfo["dedupe"]`:
-/// `req:<id>` for requests, `<sessionID>@<ms>` for finished or failed runs.
+/// `req:<id>` for requests, `<sessionID>@<idle ms>` for finished or failed runs.
+/// Pushes without a `key` get `~<sessionID>@<event ms>`, which only matches within a time window.
 nonisolated enum AlertKey {
-    /// Local runs carry the session's idle time, pushes the event time; both mark the same run end.
+    /// The event time of old payloads lies close to, but not exactly on, the session's idle time.
     /// ponytail: a second run of the same session ending within this window counts as a duplicate.
     static let runWindow: Double = 10_000
 
     static func forPush(_ message: PushMessage) -> String {
+        if let key = message.key { return key }
         if let requestID = message.requestID { return "req:\(requestID)" }
-        return "\(message.sessionID)@\(Int64(message.ts))"
+        return "~\(message.sessionID)@\(Int64(message.ts))"
+    }
+
+    /// Notification identifier for a key; the plugin sends the same as `apns-collapse-id`,
+    /// so a push replaces the local alert it duplicates.
+    static func identifier(_ key: String) -> String {
+        SHA256.hash(data: Data(key.utf8)).map { String(format: "%02x", $0) }.joined().prefix(32).description
     }
 
     static func isDuplicate(_ a: String, _ b: String) -> Bool {
         if a == b { return true }
-        guard !a.hasPrefix("req:"), !b.hasPrefix("req:"), let run1 = run(a), let run2 = run(b) else { return false }
+        guard a.hasPrefix("~") || b.hasPrefix("~"), let run1 = run(a), let run2 = run(b) else { return false }
         return run1.session == run2.session && abs(run1.time - run2.time) < runWindow
     }
 
     private static func run(_ key: String) -> (session: Substring, time: Double)? {
-        guard let at = key.lastIndex(of: "@"), let time = Double(key[key.index(after: at)...]) else { return nil }
+        let key = key.hasPrefix("~") ? key.dropFirst() : Substring(key)
+        guard !key.hasPrefix("req:"), let at = key.lastIndex(of: "@"), let time = Double(key[key.index(after: at)...]) else { return nil }
         return (key[..<at], time)
     }
 }

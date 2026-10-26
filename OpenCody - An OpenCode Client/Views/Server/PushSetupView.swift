@@ -178,7 +178,7 @@ enum PushSetupGuide {
         2. Install the plugin with ONE of:
            a. `opencode plugin add opencody-notify` (adds it to the global config of the user that runs OpenCode), or
            b. add "opencody-notify" to the "plugins" array in `~/.config/opencode/opencode.jsonc` of that user (or `<project>/opencode.jsonc`).
-           If the package isn't on npm, use a local build of the plugin instead (`npm ci && npm run build` in its `plugin` folder) and add `{ "package": "<absolute path>" }` to "plugins".
+           If the plugin manager can't install it, unpack the npm package into a folder (`npm pack opencody-notify`, then `tar -xzf opencody-notify-*.tgz --strip-components=1`) and add `{ "package": "<absolute path of that folder>" }` to "plugins".
            In a container, do this in the image or a mounted config, so it survives a rebuild.
         3. Give the OpenCode process the environment variable OPENCODY_PAIRING with the pairing string. Several iPhones: separate the strings with commas or new lines.
            - Native: an EnvironmentFile (mode 600) for the systemd unit, or the environment of whatever starts OpenCode.

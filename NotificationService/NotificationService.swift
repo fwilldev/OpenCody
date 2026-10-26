@@ -21,12 +21,14 @@ final class NotificationService: UNNotificationServiceExtension {
         message.apply(to: decrypted, serverID: pairing.serverID)
         self.content = decrypted
 
-        // The app may already have shown this alert from its live connection; keep the
-        // push quiet and drop the older copy so the list holds one.
+        // Recorded even if the user swipes the push away, so the app's catch-up stays silent.
+        // If the app already announced it from its live connection, keep the push quiet
+        // and drop the older copy so the list holds one.
         let key = AlertKey.forPush(message)
+        let known = !NotificationLedger().insert(key)
         UNUserNotificationCenter.current().getDeliveredNotifications { delivered in
             let twins = delivered.filter { ($0.request.content.userInfo["dedupe"] as? String).map { AlertKey.isDuplicate($0, key) } ?? false }
-            if !twins.isEmpty {
+            if known || !twins.isEmpty {
                 decrypted.sound = nil
                 decrypted.interruptionLevel = .passive
                 UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: twins.map(\.request.identifier))

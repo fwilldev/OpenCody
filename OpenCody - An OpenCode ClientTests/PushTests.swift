@@ -125,7 +125,14 @@ final class PushTests: XCTestCase {
         XCTAssertEqual(content.subtitle, "Büro 🖥")
         XCTAssertEqual(content.body, "Session finished")
         XCTAssertEqual(content.categoryIdentifier, "OC_SESSION")
-        XCTAssertEqual(content.userInfo["dedupe"] as? String, "ses_1@0")
+        XCTAssertEqual(content.userInfo["dedupe"] as? String, "~ses_1@0", "payloads without key match by time window")
+    }
+
+    func testPushKeyIsUsedExactly() throws {
+        let json = #"{"v":1,"type":"session.finished","server":"s","sessionID":"ses_1","text":"Session finished","key":"ses_1@1767225600123","ts":1767225600000}"#
+        XCTAssertEqual(try content(json).userInfo["dedupe"] as? String, "ses_1@1767225600123")
+        let permission = #"{"v":1,"type":"permission.asked","server":"s","sessionID":"ses_1","text":"t","requestID":"per_1","key":"req:per_1","ts":1}"#
+        XCTAssertEqual(try content(permission).userInfo["dedupe"] as? String, "req:per_1")
     }
 
     func testSubagentRequestOpensRootAndRepliesToChild() throws {
@@ -149,11 +156,20 @@ final class PushTests: XCTestCase {
     func testDedupeKeys() {
         XCTAssertTrue(AlertKey.isDuplicate("req:per_1", "req:per_1"))
         XCTAssertFalse(AlertKey.isDuplicate("req:per_1", "req:per_2"))
-        // Local runs use the session's idle time, push the event time; both mark the end of the run.
-        XCTAssertTrue(AlertKey.isDuplicate("ses_1@1000", "ses_1@3500"))
-        XCTAssertFalse(AlertKey.isDuplicate("ses_1@1000", "ses_1@60000"))
-        XCTAssertFalse(AlertKey.isDuplicate("ses_1@1000", "ses_2@1000"))
-        XCTAssertFalse(AlertKey.isDuplicate("req:ses_1@1000", "ses_1@1000"))
+        // Exact keys from the plugin: a second run moments later is a new alert.
+        XCTAssertFalse(AlertKey.isDuplicate("ses_1@1000", "ses_1@3500"))
+        // Old payloads carry only the event time, which is close to the session's idle time.
+        XCTAssertTrue(AlertKey.isDuplicate("~ses_1@1000", "ses_1@3500"))
+        XCTAssertTrue(AlertKey.isDuplicate("ses_1@3500", "~ses_1@1000"))
+        XCTAssertFalse(AlertKey.isDuplicate("~ses_1@1000", "ses_1@60000"))
+        XCTAssertFalse(AlertKey.isDuplicate("~ses_1@1000", "ses_2@1000"))
+        XCTAssertFalse(AlertKey.isDuplicate("req:ses_1@1000", "~ses_1@1000"))
+    }
+
+    func testIdentifierIsTheCollapseIDOfTheKey() {
+        // Vectors from SPEC.md §5.1; the plugin sends the same value as apns-collapse-id.
+        XCTAssertEqual(AlertKey.identifier("ses_1@1767225600000"), "e622b83c47b5acbee7da0fed1f4e1818")
+        XCTAssertEqual(AlertKey.identifier("req:per_456"), "6bec7729bb16ff4d8cbe3f0c25079359")
     }
 
     func testLocalAlertsUseSharedCategoriesAndKeys() {
@@ -161,7 +177,7 @@ final class PushTests: XCTestCase {
         let state = V2SessionState(json: ["id": "ses_child", "parentID": "ses_root"])!
         let alert = raw.resolved(with: state)!
         let request = NotificationContent.requests(for: [alert], server: server)[0]
-        XCTAssertEqual(request.identifier, "req:per_1")
+        XCTAssertEqual(request.identifier, AlertKey.identifier("req:per_1"))
         XCTAssertEqual(request.content.categoryIdentifier, "OC_PERMISSION")
         XCTAssertEqual(request.content.userInfo["dedupe"] as? String, "req:per_1")
         XCTAssertEqual(request.content.userInfo["sessionID"] as? String, "ses_root")
@@ -174,7 +190,7 @@ final class PushTests: XCTestCase {
             SessionAlert(kind: .finished, sessionID: "ses_1", key: "ses_1@1000"),
             SessionAlert(kind: .permission, sessionID: "ses_2", requestID: "per_9", key: "req:per_9"),
         ]
-        XCTAssertEqual(AlertKey.fresh(alerts, delivered: ["ses_1@1200"]).map(\.key), ["req:per_9"])
+        XCTAssertEqual(AlertKey.fresh(alerts, delivered: ["~ses_1@1200"]).map(\.key), ["req:per_9"])
     }
 
     // MARK: - Actions (§6.5)

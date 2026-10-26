@@ -113,40 +113,6 @@ nonisolated struct V2SessionState: Equatable, Sendable {
     var idleKey: String? { idle.map { "\(id)@\(Int64($0))" } }
 }
 
-/// Remembers what was already notified across launches, so live events, catch-up
-/// and background refresh never post the same alert twice.
-final class NotificationLedger {
-    private let defaults: UserDefaults
-    private let capacity: Int
-    private let keysKey = "notification.ledger"
-    private let baselinesKey = "notification.ledger.baselines"
-
-    init(defaults: UserDefaults = .standard, capacity: Int = 500) {
-        self.defaults = defaults
-        self.capacity = capacity
-    }
-
-    /// Records `key`; `false` if it was already there.
-    @discardableResult
-    func insert(_ key: String) -> Bool {
-        var keys = defaults.stringArray(forKey: keysKey) ?? []
-        guard !keys.contains(key) else { return false }
-        keys.append(key)
-        keys.removeFirst(max(0, keys.count - capacity))
-        defaults.set(keys, forKey: keysKey)
-        return true
-    }
-
-    /// `true` only the first time a server is caught up.
-    func markBaseline(_ server: UUID) -> Bool {
-        var servers = defaults.stringArray(forKey: baselinesKey) ?? []
-        guard !servers.contains(server.uuidString) else { return false }
-        servers.append(server.uuidString)
-        defaults.set(servers, forKey: baselinesKey)
-        return true
-    }
-}
-
 /// Rebuilds missed alerts from server state, since `/api/event` has no replay.
 enum NotificationCatchUp {
     typealias JSON = [String: Any]
@@ -246,7 +212,7 @@ enum NotificationContent {
             return [UNNotificationRequest(identifier: "summary-\(UUID().uuidString)", content: content, trigger: nil)]
         }
         return alerts.map { alert in
-            UNNotificationRequest(identifier: alert.key, content: content(for: alert, server: server), trigger: nil)
+            UNNotificationRequest(identifier: AlertKey.identifier(alert.key), content: content(for: alert, server: server), trigger: nil)
         }
     }
 
