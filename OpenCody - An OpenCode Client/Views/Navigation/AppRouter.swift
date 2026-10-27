@@ -72,6 +72,12 @@ final class AppRouter {
         return session.id
     }
 
+    /// The sidebar's selected project row; none while Settings is shown.
+    var sidebarProject: String? {
+        get { selectedTab == .settings ? nil : selectedProject }
+        set { selectProject(newValue) }
+    }
+
     func selectProject(_ directory: String?) {
         selectedTab = .dashboard
         guard directory != selectedProject || directory == nil else { return }

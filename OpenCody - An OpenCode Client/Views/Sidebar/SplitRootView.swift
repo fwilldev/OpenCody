@@ -31,7 +31,7 @@ struct SplitRootView: View {
             SidebarView(
                 connectionManager: connectionManager,
                 viewModel: viewModel,
-                selectedProjectKey: projectSelection,
+                selectedProjectKey: Bindable(router).sidebarProject,
                 openSettings: router.navigateToSettings
             )
             .navigationTitle("OpenCody")
@@ -72,15 +72,6 @@ struct SplitRootView: View {
         .onDisappear { viewModel.stopObservingEvents() }
     }
 
-    // MARK: - Navigation Bindings
-
-    private var projectSelection: Binding<String?> {
-        Binding(
-            get: { router.selectedTab == .settings ? nil : router.selectedProject },
-            set: { router.selectProject($0) }
-        )
-    }
-
     // MARK: - Detail Content
 
     /// One stack for the whole detail column; only its root follows the sidebar selection.
@@ -98,6 +89,8 @@ struct SplitRootView: View {
             SettingsView(connectionManager: connectionManager)
         } else if let directory = router.selectedProject {
             ProjectSessionsView(projectPath: directory, viewModel: viewModel, connectionManager: connectionManager)
+                // A fresh list per project, not the previous one's sessions and search.
+                .id(directory)
         } else {
             emptyContent
         }

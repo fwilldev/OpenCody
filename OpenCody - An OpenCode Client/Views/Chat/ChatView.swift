@@ -14,6 +14,7 @@ struct ChatView: View {
     @FocusState private var isInputFocused: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(AppRouter.self) private var router
     @State private var width: CGFloat = 0
     /// Bumped on Allow / Deny to play the matching haptic.
     @State private var allowCount = 0
@@ -112,8 +113,11 @@ struct ChatView: View {
         .toolbarVisibility(.hidden, for: .tabBar)
         .sensoryFeedback(.success, trigger: allowCount)
         .sensoryFeedback(.warning, trigger: denyCount)
-        .navigationDestination(item: $viewModel.forkedSession) { forked in
-            ChatView(session: forked, connectionManager: connectionManager)
+        .onChange(of: viewModel.forkedSession) { _, forked in
+            // Pushed through the path, so the stack has a single source of truth.
+            guard let forked else { return }
+            viewModel.forkedSession = nil
+            router.dashboardPath.append(.chat(forked))
         }
         .inspector(isPresented: utilityInspector) {
             if let client = connectionManager.activeAPIClient {
