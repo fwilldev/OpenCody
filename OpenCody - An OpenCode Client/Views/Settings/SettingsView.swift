@@ -23,7 +23,7 @@ struct SettingsView: View {
 
                     // MARK: - Connection
                     SettingsSection(title: "Connection") {
-                        NavigationLink(value: AppRouter.SettingsRoute.servers) {
+                        NavigationLink(value: AppRouter.Route.settings(.servers)) {
                             SettingsRow(
                                 icon: "server.rack",
                                 iconColor: Theme.Colors.cyberBlue,
@@ -55,7 +55,7 @@ struct SettingsView: View {
 
                     // MARK: - AI
                     SettingsSection(title: "AI") {
-                        NavigationLink(value: AppRouter.SettingsRoute.providers) {
+                        NavigationLink(value: AppRouter.Route.settings(.providers)) {
                             SettingsRow(
                                 icon: "cpu",
                                 iconColor: Theme.Colors.neonGreen,
@@ -66,7 +66,7 @@ struct SettingsView: View {
 
                         SettingsDivider()
 
-                        NavigationLink(value: AppRouter.SettingsRoute.mcp) {
+                        NavigationLink(value: AppRouter.Route.settings(.mcp)) {
                             SettingsRow(
                                 icon: "puzzlepiece.extension",
                                 iconColor: Theme.Colors.electricPurple,
@@ -124,7 +124,7 @@ struct SettingsView: View {
 
                     // MARK: - Support
                     SettingsSection(title: "Support") {
-                        NavigationLink(value: AppRouter.SettingsRoute.tipJar) {
+                        NavigationLink(value: AppRouter.Route.settings(.tipJar)) {
                             SettingsRow(
                                 icon: "heart.fill",
                                 iconColor: Theme.Colors.hotPink,
@@ -158,7 +158,7 @@ struct SettingsView: View {
 
                         SettingsDivider()
 
-                        NavigationLink(value: AppRouter.SettingsRoute.licenses) {
+                        NavigationLink(value: AppRouter.Route.settings(.licenses)) {
                             SettingsRow(
                                 icon: "doc.text",
                                 iconColor: Theme.Colors.cyberBlue,
@@ -169,7 +169,7 @@ struct SettingsView: View {
 
                         SettingsDivider()
 
-                        NavigationLink(value: AppRouter.SettingsRoute.privacy) {
+                        NavigationLink(value: AppRouter.Route.settings(.privacy)) {
                             SettingsRow(
                                 icon: "hand.raised",
                                 iconColor: Theme.Colors.electricPurple,
@@ -218,27 +218,6 @@ struct SettingsView: View {
             }
         }
         .navigationTitle("Settings")
-        .navigationDestination(for: AppRouter.SettingsRoute.self) { route in
-            switch route {
-            case .servers:
-                ServerListView(connectionManager: connectionManager)
-            case .providers:
-                if let apiClient = connectionManager.activeAPIClient {
-                    ProvidersView(apiClient: apiClient)
-                } else {
-                    noConnectionView(for: "Providers")
-                }
-            case .mcp:
-                if let apiClient = connectionManager.activeAPIClient {
-                    MCPView(apiClient: apiClient)
-                } else {
-                    noConnectionView(for: "MCP Servers")
-                }
-            case .tipJar: TipJarView()
-            case .licenses: LicensesView()
-            case .privacy: PrivacyPolicyView()
-            }
-        }
         .navigationBarTitleDisplayMode(.large)
     }
 
@@ -261,17 +240,6 @@ struct SettingsView: View {
 
     private var appVersion: String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
-    }
-
-    @ViewBuilder
-    private func noConnectionView(for name: String) -> some View {
-        EmptyStateView(
-            systemImage: "wifi.slash",
-            title: "Not Connected",
-            message: "Connect to a server in the Servers section to access \(name)."
-        )
-        .background(Theme.Colors.deepBlack)
-        .navigationTitle(name)
     }
 }
 

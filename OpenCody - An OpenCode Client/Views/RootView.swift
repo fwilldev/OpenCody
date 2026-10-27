@@ -117,23 +117,13 @@ struct RootView: View {
                 Tab("Dashboard", systemImage: "rectangle.stack", value: AppRouter.TabItem.dashboard) {
                     NavigationStack(path: $router.dashboardPath) {
                         DashboardView(viewModel: dashboardViewModel, connectionManager: connectionManager)
-                            .navigationDestination(for: AppRouter.Route.self) { route in
-                                switch route {
-                                case .project(let directory):
-                                    ProjectSessionsView(
-                                        projectPath: directory,
-                                        viewModel: dashboardViewModel,
-                                        connectionManager: connectionManager
-                                    )
-                                case .chat(let session):
-                                    ChatView(session: session, connectionManager: connectionManager)
-                                }
-                            }
+                            .routeDestinations(viewModel: dashboardViewModel, connectionManager: connectionManager)
                     }
                 }
                 Tab("Settings", systemImage: "gearshape", value: AppRouter.TabItem.settings) {
                     NavigationStack(path: $router.settingsPath) {
                         SettingsView(connectionManager: connectionManager)
+                            .routeDestinations(viewModel: dashboardViewModel, connectionManager: connectionManager)
                     }
                 }
             }

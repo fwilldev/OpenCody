@@ -81,39 +81,23 @@ struct SplitRootView: View {
         )
     }
 
-    /// The detail column's stack: everything above the selected project.
-    private var detailPath: Binding<[AppRouter.Route]> {
-        Binding(
-            get: { Array(router.dashboardPath.dropFirst()) },
-            set: { router.dashboardPath = Array(router.dashboardPath.prefix(1)) + $0 }
-        )
-    }
-
     // MARK: - Detail Content
 
-    @ViewBuilder
+    /// One stack for the whole detail column; only its root follows the sidebar selection.
     private var detailContent: some View {
         @Bindable var router = router
+        return NavigationStack(path: $router.detailPath) {
+            detailRoot
+                .routeDestinations(viewModel: viewModel, connectionManager: connectionManager)
+        }
+    }
+
+    @ViewBuilder
+    private var detailRoot: some View {
         if router.selectedTab == .settings {
-            NavigationStack(path: $router.settingsPath) {
-                SettingsView(connectionManager: connectionManager)
-            }
+            SettingsView(connectionManager: connectionManager)
         } else if let directory = router.selectedProject {
-            NavigationStack(path: detailPath) {
-                ProjectSessionsView(
-                    projectPath: directory,
-                    viewModel: viewModel,
-                    connectionManager: connectionManager
-                )
-                .navigationDestination(for: AppRouter.Route.self) { route in
-                    switch route {
-                    case .project(let directory):
-                        ProjectSessionsView(projectPath: directory, viewModel: viewModel, connectionManager: connectionManager)
-                    case .chat(let session):
-                        ChatView(session: session, connectionManager: connectionManager)
-                    }
-                }
-            }
+            ProjectSessionsView(projectPath: directory, viewModel: viewModel, connectionManager: connectionManager)
         } else {
             emptyContent
         }

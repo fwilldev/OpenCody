@@ -228,6 +228,8 @@ final class AdaptiveLayoutUITests: XCTestCase {
         for _ in 0..<3 {
             app.buttons["Settings"].firstMatch.tap()
             XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 5), "settings shown")
+            app.buttons.containing(NSPredicate(format: "label CONTAINS 'Servers'")).firstMatch.tap()
+            XCTAssertTrue(app.navigationBars["Servers"].waitForExistence(timeout: 5), "a settings screen pushes")
             app.staticTexts[project].firstMatch.tap()
             let row = app.staticTexts[session].firstMatch
             XCTAssertTrue(row.waitForExistence(timeout: 5), "project's session list, not a blank detail")

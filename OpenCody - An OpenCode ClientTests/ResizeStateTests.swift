@@ -59,4 +59,24 @@ final class ResizeStateTests: XCTestCase {
         }
         XCTAssertFalse(ChatViewModel.shared(session: chat, connectionManager: manager) === first, "evicted after 4 newer chats")
     }
+
+    /// The sidebar layout has one detail stack: Settings and the project's screens take turns in it.
+    func testDetailPathFollowsTheSidebarSelection() throws {
+        let router = AppRouter()
+        let chat = try session("ses_1")
+        router.openChat(chat)
+        XCTAssertEqual(router.detailPath, [.chat(chat)])
+
+        router.navigateToSettings()
+        XCTAssertEqual(router.detailPath, [])
+        router.detailPath.append(.settings(.servers))
+        XCTAssertEqual(router.settingsPath, [.settings(.servers)])
+        XCTAssertEqual(router.dashboardPath, [.project("/repo"), .chat(chat)], "the chat stays for the way back")
+
+        router.selectProject("/repo")
+        XCTAssertEqual(router.detailPath, [.chat(chat)])
+        router.detailPath = []
+        XCTAssertEqual(router.dashboardPath, [.project("/repo")], "popping keeps the selected project")
+    }
 }
+

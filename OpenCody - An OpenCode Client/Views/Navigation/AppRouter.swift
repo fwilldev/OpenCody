@@ -11,10 +11,12 @@ final class AppRouter {
         case settings
     }
 
+    /// Every pushed screen, so all stacks share one destination type (`RouteDestination`).
     enum Route: Hashable {
         /// A project's session list, keyed by its directory.
         case project(String)
         case chat(Session)
+        case settings(SettingsRoute)
     }
 
     /// Settings screens, pushed by value so `settingsPath` (and a resize) keeps them.
@@ -24,7 +26,21 @@ final class AppRouter {
 
     var selectedTab: TabItem = .dashboard
     var dashboardPath: [Route] = []
-    var settingsPath = NavigationPath()
+    var settingsPath: [Route] = []
+
+    /// The sidebar layout's single detail stack: the Settings screens, or what's above the
+    /// selected project. One stack with one path type, so switching between them never swaps
+    /// stacks inside the split view's detail column.
+    var detailPath: [Route] {
+        get { selectedTab == .settings ? settingsPath : Array(dashboardPath.dropFirst()) }
+        set {
+            if selectedTab == .settings {
+                settingsPath = newValue
+            } else {
+                dashboardPath = Array(dashboardPath.prefix(1)) + newValue
+            }
+        }
+    }
 
     // Sheets both layouts offer. Presented above the layout switch, so a resize keeps them open.
     var newSession: NewSessionRequest?
