@@ -83,15 +83,19 @@ final class PushService {
     private(set) var revision = 0
 
     @ObservationIgnored private var token: String?
-    @ObservationIgnored private var tokenWaiters: [CheckedContinuation<String, Error>] = []
+    @ObservationIgnored private var tokenWaiters: [UUID: CheckedContinuation<String, Error>] = [:]
+    @ObservationIgnored var tokenTimeout: Duration = .seconds(10)
+    @ObservationIgnored var requestToken: () -> Void = { UIApplication.shared.registerForRemoteNotifications() }
 
-    enum Failure: LocalizedError {
+    enum Failure: LocalizedError, Equatable {
         case notAllowed, noToken
+        case registration(String)
 
         var errorDescription: String? {
             switch self {
             case .notAllowed: "Notifications are off for OpenCody. Turn them on in the Settings app."
-            case .noToken: "iOS didn't hand out a push token. Check the internet connection and try again."
+            case .noToken: "iOS didn't hand out a push token within 10 seconds. Check the internet connection and try again."
+            case .registration(let reason): "iOS couldn't register for push: \(reason)"
             }
         }
     }
@@ -107,25 +111,26 @@ final class PushService {
     func didRegister(deviceToken: Data) async {
         let hex = deviceToken.map { String(format: "%02x", $0) }.joined()
         token = hex
-        tokenWaiters.forEach { $0.resume(returning: hex) }
-        tokenWaiters = []
+        tokenWaiters.values.forEach { $0.resume(returning: hex) }
+        tokenWaiters = [:]
         await refresh(token: hex)
     }
 
     func didFailToRegister(_ error: Error) {
-        tokenWaiters.forEach { $0.resume(throwing: error) }
-        tokenWaiters = []
+        tokenWaiters.values.forEach { $0.resume(throwing: Failure.registration(error.localizedDescription)) }
+        tokenWaiters = [:]
     }
 
-    private func deviceToken() async throws -> String {
+    func deviceToken() async throws -> String {
         if let token { return token }
+        let id = UUID()
         Task {
-            try? await Task.sleep(for: .seconds(20))
-            didFailToRegister(Failure.noToken)
+            try? await Task.sleep(for: tokenTimeout)
+            tokenWaiters.removeValue(forKey: id)?.resume(throwing: Failure.noToken)
         }
         return try await withCheckedThrowingContinuation { continuation in
-            tokenWaiters.append(continuation)
-            UIApplication.shared.registerForRemoteNotifications()
+            tokenWaiters[id] = continuation
+            requestToken()
         }
     }
 

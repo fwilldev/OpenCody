@@ -21,13 +21,13 @@ final class NotificationService: UNNotificationServiceExtension {
         message.apply(to: decrypted, serverID: pairing.serverID)
         self.content = decrypted
 
-        // A push shown before (re-delivered, or an old plugin's twin) stays quiet
+        // A push still in the list (re-delivered, or an old plugin's twin) stays quiet
         // and replaces the older copy, so the list holds one.
+        // ponytail: a re-delivery after the user cleared the first alert sounds again; apns-collapse-id makes that rare.
         let key = AlertKey.forPush(message)
-        let known = !NotificationLedger().insert(key)
         UNUserNotificationCenter.current().getDeliveredNotifications { delivered in
             let twins = delivered.filter { ($0.request.content.userInfo["dedupe"] as? String).map { AlertKey.isDuplicate($0, key) } ?? false }
-            if known || !twins.isEmpty {
+            if !twins.isEmpty {
                 decrypted.sound = nil
                 decrypted.interruptionLevel = .passive
                 UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: twins.map(\.request.identifier))

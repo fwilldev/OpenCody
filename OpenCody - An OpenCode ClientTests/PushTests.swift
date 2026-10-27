@@ -4,7 +4,7 @@ import UserNotifications
 @testable import OpenCody___An_OpenCode_Client
 
 /// Push protocol (OC-NOTIFY-3) against `opencody-push/SPEC.md`: crypto test vectors (§4.1),
-/// pairing string (§3), message → notification (§5, §6.4), dedupe with local alerts, actions (§6.5).
+/// pairing string (§3), message → notification (§5, §6.4), dedupe, device token, actions (§6.5).
 @MainActor
 final class PushTests: XCTestCase {
 
@@ -166,19 +166,6 @@ final class PushTests: XCTestCase {
         XCTAssertFalse(AlertKey.isDuplicate("req:ses_1@1000", "~ses_1@1000"))
     }
 
-    func testLedgerQuietsRepeatedPushes() throws {
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: "PushTests.ledger"))
-        defaults.removePersistentDomain(forName: "PushTests.ledger")
-        XCTAssertTrue(NotificationLedger(defaults: defaults).insert("ses_1@2000"))
-        XCTAssertFalse(NotificationLedger(defaults: defaults).insert("ses_1@2000"))
-        XCTAssertFalse(NotificationLedger(defaults: defaults).insert("~ses_1@2400"))
-        XCTAssertTrue(NotificationLedger(defaults: defaults).insert("ses_1@3000"))
-
-        let bounded = NotificationLedger(defaults: defaults, capacity: 2)
-        for key in ["a", "b", "c"] { bounded.insert(key) }
-        XCTAssertTrue(bounded.insert("a"))
-    }
-
     // MARK: - Settings
 
     func testPushStatusPerServer() {
@@ -222,5 +209,46 @@ final class PushTests: XCTestCase {
         XCTAssertTrue(prompt.contains("opencode plugin add opencody-notify"))
         XCTAssertTrue(prompt.contains("OPENCODY_PAIRING"))
         XCTAssertTrue(prompt.contains("opencode.jsonc"))
+    }
+
+    func testHumanStepsStartWithPairingUntilPaired() {
+        let before = PushSetupGuide.humanSteps(paired: false)
+        let after = PushSetupGuide.humanSteps(paired: true)
+        XCTAssertEqual(before.first, "Turn on push for this server above.")
+        XCTAssertEqual(Array(before.dropFirst()), after)
+        XCTAssertTrue(after.first!.contains("opencode plugin add opencody-notify"))
+    }
+
+    // MARK: - Device token
+
+    func testDeviceTokenTimesOut() async {
+        let service = PushService()
+        service.requestToken = {}
+        service.tokenTimeout = .milliseconds(50)
+        do {
+            _ = try await service.deviceToken()
+            XCTFail("expected a timeout")
+        } catch {
+            XCTAssertEqual(error as? PushService.Failure, .noToken)
+        }
+    }
+
+    func testDeviceTokenSurfacesRegistrationFailure() async {
+        let service = PushService()
+        service.requestToken = { service.didFailToRegister(URLError(.notConnectedToInternet)) }
+        do {
+            _ = try await service.deviceToken()
+            XCTFail("expected a failure")
+        } catch {
+            guard case .registration(let reason) = error as? PushService.Failure else { return XCTFail("\(error)") }
+            XCTAssertFalse(reason.isEmpty)
+        }
+    }
+
+    func testDeviceTokenResolvesOnRegistration() async throws {
+        let service = PushService()
+        service.requestToken = { Task { await service.didRegister(deviceToken: Data([0xab, 0x01])) } }
+        let token = try await service.deviceToken()
+        XCTAssertEqual(token, "ab01")
     }
 }

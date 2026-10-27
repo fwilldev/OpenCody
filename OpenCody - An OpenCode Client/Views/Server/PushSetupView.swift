@@ -23,22 +23,30 @@ struct PushSetupView: View {
                 Section {
                     Text("Notifications need OpenCode 2 or later. This server runs OpenCode 1.x.")
                 }
-            } else if let pairing = push.pairing(for: server.id) {
-                paired(pairing)
             } else {
-                Section {
-                    Button("Turn On Push Notifications", systemImage: "bell.badge") { Task { await pair() } }
-                        .disabled(busy)
-                } footer: {
-                    Text("Get alerts when a run finishes, fails or needs your answer, even while OpenCody is closed. Your server sends them through the OpenCody relay, which only sees encrypted data.")
+                let pairing = push.pairing(for: server.id)
+                if let pairing {
+                    status(pairing)
+                } else {
+                    Section {
+                        Button("Turn On Push Notifications", systemImage: "bell.badge") { Task { await pair() } }
+                            .disabled(busy)
+                        if busy { Label { Text("Pairing…") } icon: { ProgressView() } }
+                    } footer: {
+                        Text("Get alerts when a run finishes, fails or needs your answer, even while OpenCody is closed. Your server sends them through the OpenCody relay, which only sees encrypted data.")
+                    }
                 }
-            }
 
-            if let error {
-                Section {
-                    Label(error, systemImage: "exclamationmark.triangle.fill")
-                        .foregroundStyle(Theme.Colors.hotPink)
+                if let error {
+                    Section {
+                        Label(error, systemImage: "exclamationmark.triangle.fill")
+                            .foregroundStyle(Theme.Colors.hotPink)
+                    }
                 }
+
+                guideSection(pairing)
+
+                if let pairing { tools(pairing) }
             }
         }
         .scrollContentBackground(.hidden)
@@ -53,7 +61,7 @@ struct PushSetupView: View {
     }
 
     @ViewBuilder
-    private func paired(_ pairing: PushPairing) -> some View {
+    private func status(_ pairing: PushPairing) -> some View {
         if pairing.broken {
             Section {
                 Label("This pairing stopped working. Pair again and replace the string on the server.", systemImage: "exclamationmark.triangle.fill")
@@ -74,7 +82,9 @@ struct PushSetupView: View {
         } footer: {
             Text("Keep it secret, like a password: whoever has it can send notifications to this iPhone and read them.")
         }
+    }
 
+    private func guideSection(_ pairing: PushPairing?) -> some View {
         Section {
             Picker("Guide", selection: $guide) {
                 ForEach(Guide.allCases, id: \.self) { Text($0.rawValue) }
@@ -85,29 +95,35 @@ struct PushSetupView: View {
 
             switch guide {
             case .human:
-                ForEach(Array(PushSetupGuide.humanSteps.enumerated()), id: \.offset) { index, step in
+                ForEach(Array(PushSetupGuide.humanSteps(paired: pairing != nil).enumerated()), id: \.offset) { index, step in
                     HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.sm) {
                         Text("\(index + 1).").foregroundStyle(Theme.Colors.cyberBlue).monospacedDigit()
                         Text(LocalizedStringKey(step))
                     }
                 }
             case .agent:
-                Text(PushSetupGuide.agentPrompt(pairing: revealed ? pairing.pairingString : "<pairing string, included when you copy>",
+                Text(PushSetupGuide.agentPrompt(pairing: pairing.map { revealed ? $0.pairingString : "<pairing string, included when you copy>" } ?? "<pairing string>",
                                                 serverName: server.name))
                     .font(Theme.Fonts.codeCaption)
                     .textSelection(.enabled)
                 Button("Copy Prompt", systemImage: "doc.on.doc") {
-                    copy(PushSetupGuide.agentPrompt(pairing: pairing.pairingString, serverName: server.name))
+                    if let pairing { copy(PushSetupGuide.agentPrompt(pairing: pairing.pairingString, serverName: server.name)) }
                 }
+                .disabled(pairing == nil)
             }
         } header: {
             Text("Set Up the Server")
         } footer: {
             Text(guide == .human
                  ? "Needs OpenCode 2 on the server and outbound HTTPS to the relay."
+                 : pairing == nil
+                 ? "Turn on push first to include the pairing string."
                  : "Paste this into Claude Code, Codex or OpenCode on a machine that can manage your server. It contains the pairing string.")
         }
+    }
 
+    @ViewBuilder
+    private func tools(_ pairing: PushPairing) -> some View {
         Section {
             Button("Send Test Notification", systemImage: "paperplane") { Task { await sendTest(pairing) } }
                 .disabled(test == .sending || pairing.broken)
@@ -158,7 +174,12 @@ struct PushSetupView: View {
 
 /// Texts for setting up the `opencody-notify` plugin (opencody-push/plugin/README.md).
 enum PushSetupGuide {
-    static let humanSteps = [
+    /// Before pairing there is no string yet, so the first step is to make one.
+    static func humanSteps(paired: Bool) -> [String] {
+        (paired ? [] : ["Turn on push for this server above."]) + steps
+    }
+
+    private static let steps = [
         "On your OpenCode 2 server, run `opencode plugin add opencody-notify`. Or add \"opencody-notify\" to \"plugins\" in opencode.jsonc.",
         "Set the environment variable OPENCODY_PAIRING to the pairing string above. For several iPhones, separate their strings with commas or new lines.",
         "Docker or Coolify: add the variable to the container, ideally as a secret, and restart the container.",
