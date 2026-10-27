@@ -15,7 +15,7 @@ nonisolated struct PushRelay: Sendable {
 
         var errorDescription: String? {
             switch self {
-            case .unauthorized, .unregistered: "The relay no longer knows this iPhone. Pair again."
+            case .unauthorized, .unregistered: "The relay no longer knows this device. Pair again."
             case .status(429, _): "Too many requests. Try again in a minute."
             case .status(let code, let reason): "The push relay answered \(code)\(reason.isEmpty ? "" : ": \(reason)")."
             }
@@ -66,7 +66,7 @@ nonisolated struct PushRelay: Sendable {
     }
 }
 
-/// Pairs this iPhone with OpenCode 2 servers for push (SPEC §6.1–6.3).
+/// Pairs this device with OpenCode 2 servers for push (SPEC §6.1–6.3).
 @Observable
 final class PushService {
     static let shared = PushService()
@@ -160,7 +160,7 @@ final class PushService {
         return PushPairingStore.pairing(server: server)
     }
 
-    /// Registers this iPhone at the relay for `server` with a fresh key; replaces an older pairing.
+    /// Registers this device at the relay for `server` with a fresh key; replaces an older pairing.
     @discardableResult
     func pair(_ server: ServerConnection) async throws -> PushPairing {
         guard try await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) else {
@@ -186,11 +186,33 @@ final class PushService {
         revision += 1
     }
 
-    /// Pushes a self-encrypted message through relay, APNs and the extension, without the server (§6.1.7).
-    func sendTest(_ pairing: PushPairing, serverName: String) async throws {
+    /// Asks the server's `opencody-notify` plugin to push to this device: the real path
+    /// server → relay → APNs → device (SPEC §6.1 step 7).
+    func sendServerTest(_ pairing: PushPairing, client: APIClient) async -> ServerPushTest {
+        let endpoint = APIEndpoint.v2("/api/rpc/opencody-notify/test", method: .POST,
+                                      json: ["input": ["deviceId": pairing.deviceId]], timeout: 20)
+        do {
+            return ServerPushTest(success: try await client.requestData(endpoint))
+        } catch OpenCodeError.validation(400, let body) {
+            let result = ServerPushTest(rpcError: Data(body.utf8))
+            guard result == .pluginMissing else { return result }
+            // Not loaded: 0.2.0 has no test route, so ask which plugins run.
+            let plugins = try? await client.requestData(.get("/api/plugin"))
+            return plugins.map(ServerPushTest.init(plugins:)) ?? result
+        } catch OpenCodeError.notFound {
+            return .serverTooOld
+        } catch let error as URLError {
+            return .offline(error.localizedDescription)
+        } catch {
+            return .failed(error.localizedDescription)
+        }
+    }
+
+    /// Pushes a self-encrypted message through relay, APNs and the extension, without the server.
+    func sendRelayTest(_ pairing: PushPairing, serverName: String) async throws {
         let message = PushMessage(
-            v: 1, type: "session.finished", server: serverName, sessionID: "",
-            title: "OpenCody", text: "Test notification. Push works for this server.",
+            v: 1, type: "test", server: serverName, sessionID: "",
+            title: "OpenCody", text: "Relay test. The relay and this device work; your server wasn't involved.",
             ts: (Date().timeIntervalSince1970 * 1000).rounded()
         )
         let ciphertext = try PushCrypto.seal(JSONEncoder().encode(message), key: pairing.key, deviceId: pairing.deviceId)
@@ -200,7 +222,79 @@ final class PushService {
     }
 }
 
-/// Whether a server can reach this iPhone by push.
+/// Result of asking the server to send a test push (plugin RPC `opencody-notify.test`).
+nonisolated enum ServerPushTest: Equatable {
+    case sent(server: String)
+    /// The plugin runs, but this device's pairing string isn't configured on the server.
+    case notPaired
+    /// The relay refused the server's push; `0` means the server couldn't reach it.
+    case relayFailed(Int)
+    case pluginOutdated
+    case pluginMissing
+    case pluginFailed(String)
+    /// No plugin RPC route: OpenCode older than 2.1.
+    case serverTooOld
+    case offline(String)
+    case failed(String)
+
+    /// `200 {"output": {"server": …}}`; a 2.x server without the route answers with its web app.
+    init(success data: Data) {
+        let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+        guard let output = object?["output"] as? [String: Any] else { self = .serverTooOld; return }
+        self = .sent(server: output["server"] as? String ?? "")
+    }
+
+    /// `400 {"_tag": "RpcError", "type": …, "data": …}`.
+    init(rpcError data: Data) {
+        let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+        let message = object?["message"] as? String ?? String(decoding: data, as: UTF8.self)
+        switch object?["type"] as? String {
+        case "not_paired": self = .notPaired
+        case "relay_failed": self = .relayFailed((object?["data"] as? [String: Any])?["status"] as? Int ?? 0)
+        case "rpc.unavailable", "rpc.method_not_found": self = .pluginMissing
+        default: self = .failed(message)
+        }
+    }
+
+    /// `GET /api/plugin` after `rpc.unavailable`: listed means loaded but older than 0.3.0.
+    init(plugins data: Data) {
+        let list = ((try? JSONSerialization.jsonObject(with: data)) as? [String: Any])?["data"] as? [[String: Any]] ?? []
+        guard let plugin = list.first(where: { $0["id"] as? String == "opencody-notify" }) else { self = .pluginMissing; return }
+        let state = plugin["state"] as? [String: Any]
+        self = state?["status"] as? String == "failed" ? .pluginFailed(state?["error"] as? String ?? "") : .pluginOutdated
+    }
+
+    var message: String {
+        switch self {
+        case .sent(let server):
+            "Sent by \(server.isEmpty ? "your server" : "“\(server)”"). It should arrive on this device in a few seconds. If it doesn't, try Test Relay Only."
+        case .notPaired:
+            "The plugin runs on your server, but without this device's pairing string. Add it to OPENCODY_PAIRING and restart OpenCode."
+        case .relayFailed(0):
+            "Your server couldn't reach the push relay. It needs outbound HTTPS to \(PushService.relayURL)."
+        case .relayFailed(401), .relayFailed(410):
+            "The relay no longer knows this device. Pair again and replace the pairing string on the server."
+        case .relayFailed(429):
+            "Too many notifications. Try again in a minute."
+        case .relayFailed(let status):
+            "The push relay answered \(status) to your server."
+        case .pluginOutdated:
+            "Your server runs an older opencody-notify. Update the plugin to 0.3.0 or later for the server test, then restart OpenCode."
+        case .pluginMissing:
+            "The opencody-notify plugin isn't running on your server. Follow Set Up the Server and install it globally with: opencode plugin add opencody-notify"
+        case .pluginFailed(let error):
+            "The opencody-notify plugin failed to load on your server\(error.isEmpty ? "" : ": \(error)")."
+        case .serverTooOld:
+            "The server test needs OpenCode 2.1 or later on your server."
+        case .offline(let reason):
+            "Can't reach your server: \(reason)"
+        case .failed(let reason):
+            reason
+        }
+    }
+}
+
+/// Whether a server can reach this device by push.
 nonisolated enum PushStatus: Equatable {
     case unsupported, off, paired, broken
 

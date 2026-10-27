@@ -1,7 +1,7 @@
 import Foundation
 import Security
 
-/// One push registration of this iPhone for one OpenCode server (§6.1).
+/// One push registration of this device for one OpenCode server (§6.1).
 nonisolated struct PushPairing: Codable, Equatable, Sendable {
     var serverID: UUID
     var relay: String

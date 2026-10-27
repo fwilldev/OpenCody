@@ -36,7 +36,7 @@ struct WhatsNewView: View {
 
                     VStack(alignment: .leading, spacing: Theme.Spacing.md) {
                         item("Notifications for OpenCode 2: get an alert when a run finishes, fails or needs your answer, even while OpenCody is closed. Allow or deny permissions right from the notification.")
-                        item("To set it up, install the OpenCody plugin on your server. Settings → Notifications → your server shows how.")
+                        item("To set it up, install the OpenCody plugin on your server. Settings → Notifications → your server shows how. The test notification comes from your server, so it checks the whole setup.")
                         item("Notifications now arrive by push only, so they need OpenCode 2 with the plugin. OpenCode 1.x servers no longer send them.")
                         item("Windows servers: folder paths like C:\\Projects\\App no longer get a leading slash. Sessions created before this update keep the broken path, so start a new session in those projects.")
                         item("iPad: more reliable navigation and connection status.")

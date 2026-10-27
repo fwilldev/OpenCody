@@ -36,4 +36,22 @@ final class PushRelayIntegrationTests: XCTestCase {
             XCTFail("unpaired device still accepted")
         } catch PushRelay.Failure.unauthorized {}
     }
+
+    /// The app's server test against a real OpenCode 2 server running opencody-notify 0.3.0.
+    /// Needs `OPENCODY_OC_URL`, `OPENCODY_OC_PASSWORD` and `OPENCODY_OC_DEVICE` (the deviceId of a
+    /// pairing configured there, whose relay is unreachable); skipped otherwise.
+    func testServerTestThroughPluginRPC() async throws {
+        let env = ProcessInfo.processInfo.environment
+        guard let url = env["OPENCODY_OC_URL"], let password = env["OPENCODY_OC_PASSWORD"], let device = env["OPENCODY_OC_DEVICE"] else {
+            throw XCTSkip("OPENCODY_OC_URL / OPENCODY_OC_PASSWORD / OPENCODY_OC_DEVICE not set")
+        }
+        let client = APIClient(baseURL: url, username: PairingAPI.username, password: password, apiVersion: .v2)
+        let pairing = { (deviceId: String) in
+            PushPairing(serverID: UUID(), relay: "http://127.0.0.1:1", deviceId: deviceId, secret: "s", key: Data(count: 32), token: "t", env: "sandbox")
+        }
+        let paired = await PushService.shared.sendServerTest(pairing(device), client: client)
+        XCTAssertEqual(paired, .relayFailed(0))
+        let other = await PushService.shared.sendServerTest(pairing("AAAAAAAAAAAAAAAAAAAAAA"), client: client)
+        XCTAssertEqual(other, .notPaired)
+    }
 }

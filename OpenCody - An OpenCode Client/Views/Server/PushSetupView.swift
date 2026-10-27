@@ -1,13 +1,13 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// Push notifications for one server: pair this iPhone, show the pairing string and
+/// Push notifications for one server: pair this device, show the pairing string and
 /// explain how to install the `opencody-notify` plugin on the server.
 struct PushSetupView: View {
     let server: ServerConnection
 
     private enum Guide: String, CaseIterable { case human = "Human", agent = "Agent" }
-    private enum TestState: Equatable { case idle, sending, sent, failure(String) }
+    private enum TestState: Equatable { case idle, sending, sent(String), failure(String) }
 
     private let push = PushService.shared
     @State private var busy = false
@@ -56,7 +56,7 @@ struct PushSetupView: View {
         .confirmationDialog("Turn Off Push", isPresented: $confirmTurnOff, titleVisibility: .visible) {
             Button("Turn Off", role: .destructive) { Task { await push.unpair(server: server.id) } }
         } message: {
-            Text("This iPhone stops getting push notifications from “\(server.name)”. Remove the pairing string from the server too.")
+            Text("This device stops getting push notifications from “\(server.name)”. Remove the pairing string from the server too.")
         }
     }
 
@@ -80,7 +80,7 @@ struct PushSetupView: View {
         } header: {
             Text("Pairing String")
         } footer: {
-            Text("Keep it secret, like a password: whoever has it can send notifications to this iPhone and read them.")
+            Text("Keep it secret, like a password: whoever has it can send notifications to this device and read them.")
         }
     }
 
@@ -125,18 +125,25 @@ struct PushSetupView: View {
     @ViewBuilder
     private func tools(_ pairing: PushPairing) -> some View {
         Section {
-            Button("Send Test Notification", systemImage: "paperplane") { Task { await sendTest(pairing) } }
+            Button("Send Test Notification", systemImage: "paperplane") { Task { await sendServerTest(pairing) } }
                 .disabled(test == .sending || pairing.broken)
             switch test {
             case .idle: EmptyView()
             case .sending: Label { Text("Sending…") } icon: { ProgressView() }
-            case .sent: Label("Sent. It should arrive in a few seconds.", systemImage: "checkmark.circle.fill")
+            case .sent(let message): Label(message, systemImage: "checkmark.circle.fill")
                     .foregroundStyle(Theme.Colors.neonGreen)
             case .failure(let message): Label(message, systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(Theme.Colors.hotPink)
             }
         } footer: {
-            Text("Tests the relay and this iPhone. Your server isn't involved.")
+            Text("Your server sends it through its opencody-notify plugin (0.3.0 or later), the relay and Apple to this device, like a real notification.")
+        }
+
+        Section {
+            Button("Test Relay Only", systemImage: "antenna.radiowaves.left.and.right") { Task { await sendRelayTest(pairing) } }
+                .disabled(test == .sending || pairing.broken)
+        } footer: {
+            Text("Checks the relay and this device, not your server. Useful when the test above fails.")
         }
 
         Section {
@@ -155,11 +162,17 @@ struct PushSetupView: View {
         }
     }
 
-    private func sendTest(_ pairing: PushPairing) async {
+    private func sendServerTest(_ pairing: PushPairing) async {
+        test = .sending
+        let result = await push.sendServerTest(pairing, client: server.makeAPIClient())
+        test = if case .sent = result { .sent(result.message) } else { .failure(result.message) }
+    }
+
+    private func sendRelayTest(_ pairing: PushPairing) async {
         test = .sending
         do {
-            try await push.sendTest(pairing, serverName: server.name)
-            test = .sent
+            try await push.sendRelayTest(pairing, serverName: server.name)
+            test = .sent("Sent through the relay only. It should arrive on this device in a few seconds.")
         } catch {
             test = .failure(error.localizedDescription)
         }
@@ -181,15 +194,15 @@ enum PushSetupGuide {
 
     private static let steps = [
         "On your OpenCode 2 server, run `opencode plugin add opencody-notify`. Or add \"opencody-notify\" to \"plugins\" in opencode.jsonc.",
-        "Set the environment variable OPENCODY_PAIRING to the pairing string above. For several iPhones, separate their strings with commas or new lines.",
+        "Set the environment variable OPENCODY_PAIRING to the pairing string above. For several devices, separate their strings with commas or new lines.",
         "Docker or Coolify: add the variable to the container, ideally as a secret, and restart the container.",
         "Restart OpenCode.",
-        "Tap Send Test Notification below. Then start a run: you get a notification when it finishes, fails or needs your answer.",
+        "Tap Send Test Notification below. Your server sends it, so it shows the whole setup works. Then start a run: you get a notification when it finishes, fails or needs your answer.",
     ]
 
     static func agentPrompt(pairing: String, serverName: String) -> String {
         """
-        Set up push notifications from my OpenCode 2 server ("\(serverName)") to the OpenCody iPhone app. Install and configure the OpenCode plugin `opencody-notify`.
+        Set up push notifications from my OpenCode 2 server ("\(serverName)") to the OpenCody app on my device. Install and configure the OpenCode plugin `opencody-notify`.
 
         Pairing string (a secret, treat it like a password):
         \(pairing)
@@ -198,16 +211,16 @@ enum PushSetupGuide {
         1. Find out how OpenCode runs: natively (`opencode serve`, e.g. as a systemd service) or in a container (Docker, docker compose, Coolify). Check it is OpenCode 2 or later (`opencode --version`).
         2. Install the plugin with ONE of:
            a. `opencode plugin add opencody-notify` (adds it to the global config of the user that runs OpenCode), or
-           b. add "opencody-notify" to the "plugins" array in `~/.config/opencode/opencode.jsonc` of that user (or `<project>/opencode.jsonc`).
+           b. add "opencody-notify" to the "plugins" array in `~/.config/opencode/opencode.jsonc` of that user. Use the global config, not a project's opencode.jsonc: OpenCody's test notification reaches the plugin only at the server's default location.
            If the plugin manager can't install it, unpack the npm package into a folder (`npm pack opencody-notify`, then `tar -xzf opencody-notify-*.tgz --strip-components=1`) and add `{ "package": "<absolute path of that folder>" }` to "plugins".
            In a container, do this in the image or a mounted config, so it survives a rebuild.
-        3. Give the OpenCode process the environment variable OPENCODY_PAIRING with the pairing string. Several iPhones: separate the strings with commas or new lines.
+        3. Give the OpenCode process the environment variable OPENCODY_PAIRING with the pairing string. Several devices: separate the strings with commas or new lines.
            - Native: an EnvironmentFile (mode 600) for the systemd unit, or the environment of whatever starts OpenCode.
            - Docker / compose: the service's environment or env_file. Coolify: Environment Variables, marked as secret.
            Optional: OPENCODY_SERVER_LABEL=<short name> sets the name shown in notifications.
         4. The server needs outbound HTTPS to \(PushService.relayURL).
         5. Restart OpenCode (recreate the container so it picks up the variable).
-        6. Verify: OpenCode starts cleanly, the plugin is loaded and the log shows no `[opencody-notify]` warning about missing pairings. Then ask me to tap "Send Test Notification" in OpenCody and to start a short run; a notification should arrive when it finishes.
+        6. Verify: OpenCode starts cleanly, the plugin (version 0.3.0 or later) is loaded and the log shows no `[opencody-notify]` warning about missing pairings. Then ask me to tap "Send Test Notification" in OpenCody: the server itself sends that notification through the plugin, so it proves the whole path. A short run should also notify me when it finishes.
 
         Rules:
         - Change nothing else: no other config, packages or services.

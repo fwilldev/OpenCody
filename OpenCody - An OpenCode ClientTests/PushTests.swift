@@ -219,6 +219,41 @@ final class PushTests: XCTestCase {
         XCTAssertTrue(after.first!.contains("opencode plugin add opencody-notify"))
     }
 
+    func testSetupCopySaysDeviceNotIPhone() {
+        let texts = PushSetupGuide.humanSteps(paired: false) + [PushSetupGuide.agentPrompt(pairing: "P", serverName: "s")]
+            + [ServerPushTest.notPaired, .relayFailed(0), .relayFailed(410), .pluginOutdated, .pluginMissing, .sent(server: "lab")].map(\.message)
+            + [PushRelay.Failure.unauthorized.errorDescription ?? ""]
+        for text in texts { XCTAssertFalse(text.localizedCaseInsensitiveContains("iphone"), text) }
+    }
+
+    // MARK: - Server test (plugin RPC, SPEC §6.1 step 7)
+
+    func testServerTestSuccess() {
+        XCTAssertEqual(ServerPushTest(success: Data(#"{"output":{"server":"homelab"}}"#.utf8)), .sent(server: "homelab"))
+        XCTAssertTrue(ServerPushTest.sent(server: "homelab").message.contains("“homelab”"))
+        // A 2.x server without the RPC route answers unknown paths with its web app.
+        XCTAssertEqual(ServerPushTest(success: Data("<!doctype html>".utf8)), .serverTooOld)
+    }
+
+    func testServerTestRpcErrors() {
+        let error = { (json: String) in ServerPushTest(rpcError: Data(json.utf8)) }
+        XCTAssertEqual(error(#"{"_tag":"RpcError","type":"not_paired","message":"no pairing","data":{"pairings":1}}"#), .notPaired)
+        XCTAssertEqual(error(#"{"_tag":"RpcError","type":"relay_failed","message":"relay answered 410","data":{"status":410}}"#), .relayFailed(410))
+        XCTAssertEqual(error(#"{"_tag":"RpcError","type":"relay_failed","message":"x","data":{"status":0}}"#), .relayFailed(0))
+        XCTAssertEqual(error(#"{"_tag":"RpcError","type":"rpc.unavailable","message":"RPC is unavailable: opencody-notify"}"#), .pluginMissing)
+        XCTAssertEqual(error(#"{"_tag":"RpcError","type":"rpc.invalid_input","message":"Missing key"}"#), .failed("Missing key"))
+        XCTAssertTrue(ServerPushTest.relayFailed(0).message.contains(PushService.relayURL))
+    }
+
+    /// After `rpc.unavailable`, the plugin list tells plugin 0.2.0 from a missing plugin.
+    func testServerTestPluginListFallback() {
+        let list = { (entries: String) in ServerPushTest(plugins: Data(#"{"location":{},"data":[{"id":"opencode.agent","source":{"type":"builtin"},"features":{"server":true},"state":{"status":"active"}}\#(entries)]}"#.utf8)) }
+        XCTAssertEqual(list(""), .pluginMissing)
+        XCTAssertEqual(list(#",{"id":"opencody-notify","source":{"type":"package","target":"opencody-notify","version":"0.2.0"},"features":{"server":true},"state":{"status":"active"}}"#), .pluginOutdated)
+        XCTAssertEqual(list(#",{"id":"opencody-notify","source":{"type":"local","path":"/opt/p"},"features":{"server":true},"state":{"status":"failed","error":"boom"}}"#), .pluginFailed("boom"))
+        XCTAssertTrue(ServerPushTest.pluginOutdated.message.contains("0.3.0"))
+    }
+
     // MARK: - Device token
 
     func testDeviceTokenTimesOut() async {
