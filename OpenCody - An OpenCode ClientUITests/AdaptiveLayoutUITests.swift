@@ -174,9 +174,10 @@ final class AdaptiveLayoutUITests: XCTestCase {
 
     // MARK: - iPad sidebar layout (OC-IPAD-1)
 
-    /// Launches into the sidebar layout, rotating to landscape where that is needed.
+    /// Launches into the sidebar layout, in landscape unless `OPENCODY_ORIENTATION` is `portrait`.
     private func launchRegular() throws -> (project: String, session: String) {
-        XCUIDevice.shared.orientation = .landscapeLeft
+        let portrait = ProcessInfo.processInfo.environment["OPENCODY_ORIENTATION"] == "portrait"
+        XCUIDevice.shared.orientation = portrait ? .portrait : .landscapeLeft
         let result = try launchConnected()
         guard isRegularLayout else { throw XCTSkip("Needs the regular-width sidebar layout.") }
         return result
@@ -192,14 +193,24 @@ final class AdaptiveLayoutUITests: XCTestCase {
         let (project, session) = try launchRegular()
         openChat(project: project, session: session)
 
-        app.buttons["Utilities"].firstMatch.tap()
-        XCTAssertTrue(app.buttons["Files"].firstMatch.waitForExistence(timeout: 5), "utilities shown")
-        XCTAssertTrue(chatInput.exists, "chat still open with the utilities")
-        XCTAssertTrue(app.navigationBars[session].exists, "still the session's chat")
-        screenshot("inspector-open")
-
-        app.buttons["Utilities"].firstMatch.tap()
-        XCTAssertTrue(app.buttons["Files"].firstMatch.waitForNonExistence(timeout: 5), "utilities closed")
+        // Too narrow for the inspector beside the chat (iPad portrait), the menu opens them as a sheet.
+        let toggle = app.buttons["Utilities"].firstMatch
+        if toggle.waitForExistence(timeout: 3) {
+            toggle.tap()
+            XCTAssertTrue(app.buttons["Files"].firstMatch.waitForExistence(timeout: 5), "utilities shown")
+            XCTAssertTrue(chatInput.exists, "chat still open with the utilities")
+            XCTAssertTrue(app.navigationBars[session].exists, "still the session's chat")
+            screenshot("inspector-open")
+            toggle.tap()
+            XCTAssertTrue(app.buttons["Files"].firstMatch.waitForNonExistence(timeout: 5), "utilities closed")
+        } else {
+            app.buttons["Session Actions"].firstMatch.tap()
+            app.buttons["File Explorer"].firstMatch.tap()
+            XCTAssertTrue(app.navigationBars["File Explorer"].waitForExistence(timeout: 5), "utilities as a sheet")
+            screenshot("utilities-sheet")
+            app.buttons["Close"].firstMatch.tap()
+            XCTAssertTrue(app.navigationBars["File Explorer"].waitForNonExistence(timeout: 5), "sheet closed")
+        }
         XCTAssertTrue(chatInput.exists, "chat still open without the utilities")
 
         // The sidebar still navigates.
@@ -239,4 +250,35 @@ final class AdaptiveLayoutUITests: XCTestCase {
         }
         screenshot("settings-and-back")
     }
+
+    /// The tab bar layout on the same routes: chat, utilities as a sheet, Settings screens.
+    func testCompactChatUtilitiesAndSettings() throws {
+        XCUIDevice.shared.orientation = .portrait
+        let (project, session) = try launchConnected()
+        guard !isRegularLayout else { throw XCTSkip("Needs the compact tab bar layout.") }
+        openChat(project: project, session: session)
+
+        app.buttons["Session Actions"].firstMatch.tap()
+        app.buttons["File Explorer"].firstMatch.tap()
+        XCTAssertTrue(app.navigationBars["File Explorer"].waitForExistence(timeout: 5), "utilities as a sheet")
+        app.buttons["Close"].firstMatch.tap()
+        XCTAssertTrue(chatInput.waitForExistence(timeout: 5), "back in the chat")
+        screenshot("compact-chat")
+
+        // The chat hides the tab bar; its project's session list shows it again.
+        app.navigationBars.buttons["BackButton"].firstMatch.tap()
+        XCTAssertTrue(app.staticTexts[session].firstMatch.waitForExistence(timeout: 5), "session list")
+        app.buttons["Settings"].firstMatch.tap()
+        app.buttons.containing(NSPredicate(format: "label CONTAINS 'Servers'")).firstMatch.tap()
+        XCTAssertTrue(app.navigationBars["Servers"].waitForExistence(timeout: 5), "servers screen")
+        XCTAssertTrue(
+            app.buttons.containing(NSPredicate(format: "label CONTAINS 'Connected'")).firstMatch.waitForExistence(timeout: 10),
+            "server row reads Connected"
+        )
+        screenshot("compact-servers")
+
+        app.buttons["Dashboard"].firstMatch.tap()
+        XCTAssertTrue(app.staticTexts[session].firstMatch.waitForExistence(timeout: 5), "the dashboard tab kept the project")
+    }
 }
+
