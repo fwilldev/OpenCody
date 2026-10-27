@@ -1,8 +1,8 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// Push notifications for one server: pair this device, show the pairing string and
-/// explain how to install the `opencody-notify` plugin on the server.
+/// Push notifications for one server: pair this device (at the relay and on the server's
+/// `opencody-notify` plugin) and explain how to install the plugin.
 struct PushSetupView: View {
     let server: ServerConnection
 
@@ -44,19 +44,27 @@ struct PushSetupView: View {
                     }
                 }
 
-                guideSection(pairing)
+                guideSection()
 
-                if let pairing { tools(pairing) }
+                if let pairing {
+                    tools(pairing)
+                    advanced(pairing)
+                }
             }
+        }
+        .task {
+            // Re-registers silently once, e.g. after the server lost its pairings.
+            if case .sent = push.serverReplies[server.id] { return }
+            await push.registerOnServer(server)
         }
         .scrollContentBackground(.hidden)
         .background(Theme.Colors.deepBlack)
         .navigationTitle("Push Notifications")
         .navigationBarTitleDisplayMode(.inline)
         .confirmationDialog("Turn Off Push", isPresented: $confirmTurnOff, titleVisibility: .visible) {
-            Button("Turn Off", role: .destructive) { Task { await push.unpair(server: server.id) } }
+            Button("Turn Off", role: .destructive) { Task { await push.unpair(server: server.id, client: server.makeAPIClient()) } }
         } message: {
-            Text("This device stops getting push notifications from “\(server.name)”. Remove the pairing string from the server too.")
+            Text("This device stops getting push notifications from “\(server.name)”. If you added its pairing string to the server by hand, remove it there too.")
         }
     }
 
@@ -64,27 +72,36 @@ struct PushSetupView: View {
     private func status(_ pairing: PushPairing) -> some View {
         if pairing.broken {
             Section {
-                Label("This pairing stopped working. Pair again and replace the string on the server.", systemImage: "exclamationmark.triangle.fill")
+                Label("This pairing stopped working. Pair again.", systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(Theme.Colors.neonOrange)
                 Button("Pair Again", systemImage: "arrow.clockwise") { Task { await pair() } }
                     .disabled(busy)
             }
-        }
-
-        Section {
-            Text(revealed ? pairing.pairingString : String(repeating: "•", count: 24))
-                .font(Theme.Fonts.codeCaption)
-                .textSelection(.enabled)
-            Button(revealed ? "Hide" : "Reveal", systemImage: revealed ? "eye.slash" : "eye") { revealed.toggle() }
-            Button("Copy Pairing String", systemImage: "doc.on.doc") { copy(pairing.pairingString) }
-        } header: {
-            Text("Pairing String")
-        } footer: {
-            Text("Keep it secret, like a password: whoever has it can send notifications to this device and read them.")
+        } else {
+            Section {
+                if push.registering.contains(server.id) {
+                    Label { Text("Registering this device with your server…") } icon: { ProgressView() }
+                } else if case .sent(let label) = push.serverReplies[server.id] {
+                    Label("Paired with “\(label.isEmpty ? server.name : label)”", systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(Theme.Colors.neonGreen)
+                } else if let reply = push.serverReplies[server.id] {
+                    Label(reply.message, systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(Theme.Colors.neonOrange)
+                    Button("Try Again", systemImage: "arrow.clockwise") { Task { await push.registerOnServer(server) } }
+                }
+            } header: {
+                Text("Server")
+            } footer: {
+                if case .sent = push.serverReplies[server.id] {
+                    Text("Your server sends this device notifications now.")
+                } else if push.serverReplies[server.id] != nil, !push.registering.contains(server.id) {
+                    Text("Or set up the server by hand with the pairing string under Advanced.")
+                }
+            }
         }
     }
 
-    private func guideSection(_ pairing: PushPairing?) -> some View {
+    private func guideSection() -> some View {
         Section {
             Picker("Guide", selection: $guide) {
                 ForEach(Guide.allCases, id: \.self) { Text($0.rawValue) }
@@ -95,30 +112,26 @@ struct PushSetupView: View {
 
             switch guide {
             case .human:
-                ForEach(Array(PushSetupGuide.humanSteps(paired: pairing != nil).enumerated()), id: \.offset) { index, step in
+                ForEach(Array(PushSetupGuide.humanSteps.enumerated()), id: \.offset) { index, step in
                     HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.sm) {
                         Text("\(index + 1).").foregroundStyle(Theme.Colors.cyberBlue).monospacedDigit()
                         Text(LocalizedStringKey(step))
                     }
                 }
             case .agent:
-                Text(PushSetupGuide.agentPrompt(pairing: pairing.map { revealed ? $0.pairingString : "<pairing string, included when you copy>" } ?? "<pairing string>",
-                                                serverName: server.name))
+                Text(PushSetupGuide.agentPrompt(serverName: server.name))
                     .font(Theme.Fonts.codeCaption)
                     .textSelection(.enabled)
                 Button("Copy Prompt", systemImage: "doc.on.doc") {
-                    if let pairing { copy(PushSetupGuide.agentPrompt(pairing: pairing.pairingString, serverName: server.name)) }
+                    UIPasteboard.general.string = PushSetupGuide.agentPrompt(serverName: server.name)
                 }
-                .disabled(pairing == nil)
             }
         } header: {
             Text("Set Up the Server")
         } footer: {
             Text(guide == .human
-                 ? "Needs OpenCode 2 on the server and outbound HTTPS to the relay."
-                 : pairing == nil
-                 ? "Turn on push first to include the pairing string."
-                 : "Paste this into Claude Code, Codex or OpenCode on a machine that can manage your server. It contains the pairing string.")
+                 ? "Needs OpenCode 2.1 or later on the server and outbound HTTPS to the relay."
+                 : "Paste this into Claude Code, Codex or OpenCode on a machine that can manage your server. It contains no secrets.")
         }
     }
 
@@ -136,7 +149,7 @@ struct PushSetupView: View {
                     .foregroundStyle(Theme.Colors.hotPink)
             }
         } footer: {
-            Text("Your server sends it through its opencody-notify plugin (0.3.0 or later), the relay and Apple to this device, like a real notification.")
+            Text("Your server sends it through its opencody-notify plugin, the relay and Apple to this device, like a real notification.")
         }
 
         Section {
@@ -148,6 +161,20 @@ struct PushSetupView: View {
 
         Section {
             Button("Turn Off Push", systemImage: "bell.slash", role: .destructive) { confirmTurnOff = true }
+        }
+    }
+
+    private func advanced(_ pairing: PushPairing) -> some View {
+        Section {
+            DisclosureGroup("Advanced") {
+                Text(revealed ? pairing.pairingString : String(repeating: "•", count: 24))
+                    .font(Theme.Fonts.codeCaption)
+                    .textSelection(.enabled)
+                Button(revealed ? "Hide" : "Reveal", systemImage: revealed ? "eye.slash" : "eye") { revealed.toggle() }
+                Button("Copy Pairing String", systemImage: "doc.on.doc") { copy(pairing.pairingString) }
+            }
+        } footer: {
+            Text("Only for servers whose plugin is older than 0.4.0 or that you set up by hand: put this pairing string into OPENCODY_PAIRING on the server and restart OpenCode. Keep it secret, like a password: whoever has it can send notifications to this device and read them.")
         }
     }
 
@@ -187,44 +214,32 @@ struct PushSetupView: View {
 
 /// Texts for setting up the `opencody-notify` plugin (opencody-push/plugin/README.md).
 enum PushSetupGuide {
-    /// Before pairing there is no string yet, so the first step is to make one.
-    static func humanSteps(paired: Bool) -> [String] {
-        (paired ? [] : ["Turn on push for this server above."]) + steps
-    }
-
-    private static let steps = [
-        "On your OpenCode 2 server, run `opencode plugin add opencody-notify`. Or add \"opencody-notify\" to \"plugins\" in opencode.jsonc.",
-        "Set the environment variable OPENCODY_PAIRING to the pairing string above. For several devices, separate their strings with commas or new lines.",
-        "Docker or Coolify: add the variable to the container, ideally as a secret, and restart the container.",
-        "Restart OpenCode.",
-        "Tap Send Test Notification below. Your server sends it, so it shows the whole setup works. Then start a run: you get a notification when it finishes, fails or needs your answer.",
+    static let humanSteps = [
+        "On your OpenCode 2 server, install the plugin globally: `opencode plugin add opencody-notify`.",
+        "Restart OpenCode once.",
+        "Turn on push for this server here.",
+        "Tap Send Test Notification. Your server sends it, so it shows the whole setup works. Then start a run: you get a notification when it finishes, fails or needs your answer.",
     ]
 
-    static func agentPrompt(pairing: String, serverName: String) -> String {
+    static func agentPrompt(serverName: String) -> String {
         """
-        Set up push notifications from my OpenCode 2 server ("\(serverName)") to the OpenCody app on my device. Install and configure the OpenCode plugin `opencody-notify`.
-
-        Pairing string (a secret, treat it like a password):
-        \(pairing)
+        Set up my OpenCode 2 server ("\(serverName)") for push notifications to the OpenCody app on my device: install the OpenCode plugin `opencody-notify` (version 0.4.0 or later). Afterwards OpenCody registers this device on the server by itself; no pairing string or environment variable is needed.
 
         Steps:
-        1. Find out how OpenCode runs: natively (`opencode serve`, e.g. as a systemd service) or in a container (Docker, docker compose, Coolify). Check it is OpenCode 2 or later (`opencode --version`).
-        2. Install the plugin with ONE of:
-           a. `opencode plugin add opencody-notify` (adds it to the global config of the user that runs OpenCode), or
-           b. add "opencody-notify" to the "plugins" array in `~/.config/opencode/opencode.jsonc` of that user. Use the global config, not a project's opencode.jsonc: OpenCody's test notification reaches the plugin only at the server's default location.
+        1. Find out how OpenCode runs: natively (`opencode serve`, e.g. as a systemd service) or in a container (Docker, docker compose, Coolify). Check it is OpenCode 2.1 or later (`opencode --version`).
+        2. Install the plugin in the GLOBAL config of the user that runs OpenCode, with ONE of:
+           a. `opencode plugin add opencody-notify`, or
+           b. add "opencody-notify" to the "plugins" array in `~/.config/opencode/opencode.jsonc`.
+           Not in a project's opencode.jsonc: OpenCody reaches the plugin only at the server's default location. If an older version is installed, update it to 0.4.0 or later.
            If the plugin manager can't install it, unpack the npm package into a folder (`npm pack opencody-notify`, then `tar -xzf opencody-notify-*.tgz --strip-components=1`) and add `{ "package": "<absolute path of that folder>" }` to "plugins".
-           In a container, do this in the image or a mounted config, so it survives a rebuild.
-        3. Give the OpenCode process the environment variable OPENCODY_PAIRING with the pairing string. Several devices: separate the strings with commas or new lines.
-           - Native: an EnvironmentFile (mode 600) for the systemd unit, or the environment of whatever starts OpenCode.
-           - Docker / compose: the service's environment or env_file. Coolify: Environment Variables, marked as secret.
-           Optional: OPENCODY_SERVER_LABEL=<short name> sets the name shown in notifications.
-        4. The server needs outbound HTTPS to \(PushService.relayURL).
-        5. Restart OpenCode (recreate the container so it picks up the variable).
-        6. Verify: OpenCode starts cleanly, the plugin (version 0.3.0 or later) is loaded and the log shows no `[opencody-notify]` warning about missing pairings. Then ask me to tap "Send Test Notification" in OpenCody: the server itself sends that notification through the plugin, so it proves the whole path. A short run should also notify me when it finishes.
+           In a container, do this in the image or a mounted config so it survives a rebuild, and keep `~/.local/share/opencody-notify/` (the paired devices) on a persistent volume.
+           Optional: OPENCODY_SERVER_LABEL=<short name> sets the server name shown in notifications.
+        3. The server needs outbound HTTPS to \(PushService.relayURL).
+        4. Restart OpenCode once (recreate the container if it runs in one).
+        5. Verify: OpenCode starts cleanly, and `GET /api/plugin` on the server (same authentication as the rest of its API) lists `opencody-notify` with state "active". Then tell me to turn on push for this server in OpenCody and tap "Send Test Notification".
 
         Rules:
         - Change nothing else: no other config, packages or services.
-        - Never print the pairing string in output or logs, and never commit it to a repository, least of all a public one. Keep it in env or secret storage.
         - Ask me before restarting a production server or one that others use.
         """
     }

@@ -224,7 +224,7 @@ struct ServerListView: View {
 
     private func deleteServer(_ server: ServerConnection) {
         connectionManager.disconnect(serverID: server.id)
-        try? KeychainService.delete(for: server.keychainIdentifier)
         serverStore.delete(id: server.id)
+        try? KeychainService.delete(for: server.keychainIdentifier)
     }
 }

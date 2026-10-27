@@ -54,4 +54,36 @@ final class PushRelayIntegrationTests: XCTestCase {
         let other = await PushService.shared.sendServerTest(pairing("AAAAAAAAAAAAAAAAAAAAAA"), client: client)
         XCTAssertEqual(other, .notPaired)
     }
+
+    /// Turning push on and off against a real OpenCode 2 server with opencody-notify 0.4.0 and the
+    /// local relay: pair over RPC, the server's test push arrives, unpair, then `not_paired`.
+    /// Needs `OPENCODY_OC_URL`, `OPENCODY_OC_PASSWORD`, `OPENCODY_RELAY_URL` (reachable from the
+    /// server, loopback) and `OPENCODY_FAKE_APNS_URL`; skipped otherwise.
+    func testAutoPairThroughPluginRPC() async throws {
+        let env = ProcessInfo.processInfo.environment
+        guard let url = env["OPENCODY_OC_URL"], let password = env["OPENCODY_OC_PASSWORD"],
+              let relayURL = env["OPENCODY_RELAY_URL"], let apns = env["OPENCODY_FAKE_APNS_URL"].flatMap(URL.init(string:)) else {
+            throw XCTSkip("OPENCODY_OC_URL / OPENCODY_OC_PASSWORD / OPENCODY_RELAY_URL / OPENCODY_FAKE_APNS_URL not set")
+        }
+        let client = APIClient(baseURL: url, username: PairingAPI.username, password: password, apiVersion: .v2)
+        let token = (0..<32).map { _ in String(format: "%02x", UInt8.random(in: 0...255)) }.joined()
+        let device = try await PushRelay(base: relayURL).register(token: token, env: "sandbox")
+        let pairing = PushPairing(serverID: UUID(), relay: relayURL, deviceId: device.deviceId, secret: device.secret,
+                                  key: Data((0..<32).map { _ in UInt8.random(in: 0...255) }), token: token, env: "sandbox")
+        let service = PushService.shared
+
+        let before = await service.sendServerTest(pairing, client: client)
+        XCTAssertEqual(before, .notPaired)
+        guard case .sent = await service.register(pairing, client: client) else { return XCTFail("pair failed") }
+        guard case .sent = await service.sendServerTest(pairing, client: client) else { return XCTFail("test after pair failed") }
+        let (data, _) = try await URLSession.shared.data(from: apns)
+        let payload = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let message = try XCTUnwrap(PushEnvelope(userInfo: payload)).open(key: pairing.key)
+        XCTAssertEqual(message.type, "test")
+
+        guard case .sent = await service.unregister(pairing, client: client) else { return XCTFail("unpair failed") }
+        let after = await service.sendServerTest(pairing, client: client)
+        XCTAssertEqual(after, .notPaired)
+        try await PushRelay(base: relayURL).delete(deviceId: device.deviceId, secret: device.secret)
+    }
 }

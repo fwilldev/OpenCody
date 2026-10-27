@@ -21,8 +21,10 @@ final class ServerStoreModel: ObservableObject {
         }
     }
 
+    /// Call before deleting the server's password: unpairing on the server needs it.
     func delete(id: UUID) {
-        Task { await PushService.shared.unpair(server: id) }
+        let client = servers.first { $0.id == id }?.makeAPIClient()
+        Task { await PushService.shared.unpair(server: id, client: client) }
         servers.removeAll { $0.id == id }
         ServerStore.shared.save(servers)
     }

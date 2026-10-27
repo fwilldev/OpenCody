@@ -330,8 +330,8 @@ struct ServerFormView: View {
     private func deleteServer() {
         guard let server else { return }
         connectionManager.disconnect(serverID: server.id)
-        try? KeychainService.delete(for: server.keychainIdentifier)
         serverStore.delete(id: server.id)
+        try? KeychainService.delete(for: server.keychainIdentifier)
         dismiss()
     }
 }
