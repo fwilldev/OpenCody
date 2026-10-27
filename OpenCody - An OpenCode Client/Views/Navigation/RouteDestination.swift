@@ -32,8 +32,6 @@ struct RouteDestination: View {
             TipJarView()
         case .settings(.licenses):
             LicensesView()
-        case .settings(.privacy):
-            PrivacyPolicyView()
         case .settings(.push(let id)):
             if let server = serverStore.servers.first(where: { $0.id == id }) {
                 PushSetupView(server: server)

@@ -16,6 +16,7 @@ struct SettingsView: View {
     @Environment(\.openURL) private var openURL
     /// `nil` until read; re-read on return from the Settings app.
     @State private var notificationStatus: UNAuthorizationStatus?
+    @State private var showPrivacy = false
     @AppStorage("appearancePreference") private var appearancePreference: String = AppearancePreference.system.rawValue
 
     var body: some View {
@@ -174,7 +175,7 @@ struct SettingsView: View {
 
                         SettingsDivider()
 
-                        NavigationLink(value: AppRouter.Route.settings(.privacy)) {
+                        Button { showPrivacy = true } label: {
                             SettingsRow(
                                 icon: "hand.raised",
                                 iconColor: Theme.Colors.electricPurple,
@@ -224,6 +225,10 @@ struct SettingsView: View {
         }
         .navigationTitle("Settings")
         .navigationBarTitleDisplayMode(.large)
+        .sheet(isPresented: $showPrivacy) {
+            SafariView(url: AppLinks.privacyPolicy)
+                .ignoresSafeArea()
+        }
     }
 
     // MARK: - Helpers
