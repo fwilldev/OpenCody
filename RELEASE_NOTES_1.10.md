@@ -7,3 +7,4 @@ To set it up, install the OpenCody plugin on your OpenCode 2 server: in OpenCody
 Fixes:
 • Windows servers: folder paths like C:\Projects\App no longer get a leading slash, which made the server report "Location not found". Sessions created before this update still point to the broken path, so please start a new session in those projects.
 • Notifications no longer show internal request IDs, and alerts you already saw don't come back.
+• iPad: more reliable navigation and connection status.

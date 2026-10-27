@@ -38,6 +38,7 @@ struct WhatsNewView: View {
                         item("Notifications for OpenCode 2: get an alert when a run finishes, fails or needs your answer, even while OpenCody is closed. Allow or deny permissions right from the notification.")
                         item("To set it up, install the OpenCody plugin on your server. Settings → Servers → your server → Push Notifications shows how.")
                         item("Windows servers: folder paths like C:\\Projects\\App no longer get a leading slash. Sessions created before this update keep the broken path, so start a new session in those projects.")
+                        item("iPad: more reliable navigation and connection status.")
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
