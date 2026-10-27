@@ -71,56 +71,15 @@ struct ChatUtilitiesPanel: View {
             FileExplorerView(
                 session: session,
                 apiClient: apiClient,
-                showsCloseButton: false,
+                isSheet: false,
                 onReference: { path in
                     viewModel.referenceFile(path: path)
                 }
             )
         case .todos:
-            TodoListView(session: session, apiClient: apiClient, viewModel: viewModel, showsCloseButton: false)
+            TodoListView(session: session, apiClient: apiClient, viewModel: viewModel, isSheet: false)
         case .diff:
-            SessionDiffView(session: session, apiClient: apiClient, showsCloseButton: false)
+            SessionDiffView(session: session, apiClient: apiClient, isSheet: false)
         }
-    }
-}
-
-/// A chat in the regular-width layout, with its utilities beside it when there is room.
-struct ChatWithUtilitiesView: View {
-    let session: Session
-    let connectionManager: ConnectionManager
-
-    @State private var viewModel: ChatViewModel
-    @State private var width: CGFloat = 0
-
-    init(session: Session, connectionManager: ConnectionManager) {
-        self.session = session
-        self.connectionManager = connectionManager
-        self._viewModel = State(initialValue: .shared(session: session, connectionManager: connectionManager))
-    }
-
-    /// The panel only fits next to a usable chat in a wide detail column. Narrower ones
-    /// (iPhone Duo's inner display, iPad portrait or Split View) get the sheet instead.
-    /// Before the first measurement it assumes the panel, so a restored utility doesn't flash up as a sheet.
-    private var showsPanel: Bool { width == 0 || width >= 680 }
-
-    var body: some View {
-        // Side by side, so the panel narrows the chat instead of covering its input.
-        // (`.inspector` overlays here, inside the split view's detail stack.)
-        HStack(spacing: 0) {
-            ChatView(
-                session: session,
-                connectionManager: connectionManager,
-                viewModel: viewModel,
-                showsUtilitiesPanel: showsPanel
-            )
-
-            if showsPanel, viewModel.isUtilityOpen, let client = connectionManager.activeAPIClient {
-                Divider()
-                ChatUtilitiesPanel(session: session, apiClient: client, viewModel: viewModel)
-                    .frame(width: 360)
-                    .transition(.move(edge: .trailing))
-            }
-        }
-        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
     }
 }

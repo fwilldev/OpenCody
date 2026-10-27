@@ -8,13 +8,13 @@ import SwiftUI
 struct ChatView: View {
     let session: Session
     let connectionManager: ConnectionManager
-    /// Whether Files, Todos and Diff open in a panel beside the chat rather than a sheet.
-    let showsUtilitiesPanel: Bool
     @State private var viewModel: ChatViewModel
     @State private var isAtBottom = true
     @State private var scrollViewHeight: CGFloat = 0
     @FocusState private var isInputFocused: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    @State private var width: CGFloat = 0
     /// Bumped on Allow / Deny to play the matching haptic.
     @State private var allowCount = 0
     @State private var denyCount = 0
@@ -22,12 +22,10 @@ struct ChatView: View {
     init(
         session: Session,
         connectionManager: ConnectionManager,
-        viewModel: ChatViewModel? = nil,
-        showsUtilitiesPanel: Bool = false
+        viewModel: ChatViewModel? = nil
     ) {
         self.session = session
         self.connectionManager = connectionManager
-        self.showsUtilitiesPanel = showsUtilitiesPanel
         self._viewModel = State(initialValue: viewModel ?? .shared(session: session, connectionManager: connectionManager))
     }
 
@@ -117,6 +115,14 @@ struct ChatView: View {
         .navigationDestination(item: $viewModel.forkedSession) { forked in
             ChatView(session: forked, connectionManager: connectionManager)
         }
+        .inspector(isPresented: utilityInspector) {
+            if let client = connectionManager.activeAPIClient {
+                ChatUtilitiesPanel(session: viewModel.session, apiClient: client, viewModel: viewModel)
+                    .inspectorColumnWidth(min: 300, ideal: 360, max: 480)
+            }
+        }
+        // Measured around the inspector, so opening it doesn't narrow the chat into the sheet case.
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
         .sheet(isPresented: utilitySheet) {
             if let client = connectionManager.activeAPIClient {
                 switch viewModel.utilityTab {
@@ -131,6 +137,20 @@ struct ChatView: View {
                 }
             }
         }
+    }
+
+    /// Files, Todos and Diff open in an inspector beside the chat when it's wide enough to stay
+    /// usable next to it, otherwise (iPhone, iPhone Duo's inner display, iPad portrait or Split View)
+    /// in a sheet. Before the first measurement it assumes the inspector, so a restored one doesn't flash up as a sheet.
+    private var showsUtilitiesPanel: Bool {
+        sizeClass == .regular && (width == 0 || width >= 680)
+    }
+
+    private var utilityInspector: Binding<Bool> {
+        Binding(
+            get: { showsUtilitiesPanel && viewModel.isUtilityOpen },
+            set: { viewModel.isUtilityOpen = $0 }
+        )
     }
 
     private var utilitySheet: Binding<Bool> {

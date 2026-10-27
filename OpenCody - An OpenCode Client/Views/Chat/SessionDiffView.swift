@@ -10,7 +10,8 @@ import SwiftUI
 struct SessionDiffView: View {
     let session: Session
     let apiClient: APIClient
-    let showsCloseButton: Bool
+    /// A sheet with its own navigation bar, or content beside the chat.
+    let isSheet: Bool
 
     @Environment(\.dismiss) private var dismiss
     @State private var diffs: [FileDiff] = []
@@ -18,52 +19,24 @@ struct SessionDiffView: View {
     @State private var error: String? = nil
 
     var body: some View {
-        NavigationStack {
-            ZStack {
-                Theme.Colors.deepBlack.ignoresSafeArea()
-
-                if isLoading {
-                    ProgressView("Loading diff…")
-                        .tint(Theme.Colors.cyberBlue)
-                        .foregroundStyle(Theme.Colors.silver)
-                } else if let err = error {
-                    VStack(spacing: Theme.Spacing.md) {
-                        Image(systemName: "exclamationmark.triangle")
-                            .font(.title)
-                            .foregroundStyle(Theme.Colors.hotPink)
-                        Text(err)
-                            .font(.subheadline)
-                            .foregroundStyle(Theme.Colors.silver)
-                            .multilineTextAlignment(.center)
-                    }
-                    .padding()
-                } else if diffs.isEmpty {
-                    EmptyStateView(
-                        systemImage: "list.bullet.rectangle",
-                        title: "No Changes",
-                        message: "This session has no file diffs yet."
-                    )
-                } else {
-                    ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 0) {
-                            ForEach(diffs, id: \.file) { diff in
-                                FileDiffSection(diff: diff)
+        Group {
+            if isSheet {
+                NavigationStack {
+                    diffContent
+                        .navigationTitle("Session Diff")
+                        // A subtitle, not a trailing bar item: on iPhone Duo the status bar sits at the top right.
+                        .navigationSubtitle("\(diffs.count) file\(diffs.count == 1 ? "" : "s")")
+                        .navigationBarTitleDisplayMode(.inline)
+                        .toolbar {
+                            ToolbarItem(placement: .cancellationAction) {
+                                Button("Close") { dismiss() }
+                                    .foregroundStyle(Theme.Colors.silver)
                             }
                         }
-                    }
                 }
-            }
-            .navigationTitle("Session Diff")
-            // A subtitle, not a trailing bar item: on iPhone Duo the status bar sits at the top right.
-            .navigationSubtitle("\(diffs.count) file\(diffs.count == 1 ? "" : "s")")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                if showsCloseButton {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Close") { dismiss() }
-                            .foregroundStyle(Theme.Colors.silver)
-                    }
-                }
+            } else {
+                // Beside the chat it's inside the chat's navigation stack: no stack or bar of its own.
+                diffContent
             }
         }
         .presentationBackground(Theme.Colors.carbon)
@@ -72,10 +45,47 @@ struct SessionDiffView: View {
         }
     }
 
-    init(session: Session, apiClient: APIClient, showsCloseButton: Bool = true) {
+    private var diffContent: some View {
+        ZStack {
+            Theme.Colors.deepBlack.ignoresSafeArea()
+
+            if isLoading {
+                ProgressView("Loading diff…")
+                    .tint(Theme.Colors.cyberBlue)
+                    .foregroundStyle(Theme.Colors.silver)
+            } else if let err = error {
+                VStack(spacing: Theme.Spacing.md) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.title)
+                        .foregroundStyle(Theme.Colors.hotPink)
+                    Text(err)
+                        .font(.subheadline)
+                        .foregroundStyle(Theme.Colors.silver)
+                        .multilineTextAlignment(.center)
+                }
+                .padding()
+            } else if diffs.isEmpty {
+                EmptyStateView(
+                    systemImage: "list.bullet.rectangle",
+                    title: "No Changes",
+                    message: "This session has no file diffs yet."
+                )
+            } else {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        ForEach(diffs, id: \.file) { diff in
+                            FileDiffSection(diff: diff)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    init(session: Session, apiClient: APIClient, isSheet: Bool = true) {
         self.session = session
         self.apiClient = apiClient
-        self.showsCloseButton = showsCloseButton
+        self.isSheet = isSheet
     }
 
     /// Load the session's changes.

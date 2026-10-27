@@ -110,7 +110,7 @@ struct SplitRootView: View {
                     case .project(let directory):
                         ProjectSessionsView(projectPath: directory, viewModel: viewModel, connectionManager: connectionManager)
                     case .chat(let session):
-                        ChatWithUtilitiesView(session: session, connectionManager: connectionManager)
+                        ChatView(session: session, connectionManager: connectionManager)
                     }
                 }
             }

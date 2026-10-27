@@ -17,7 +17,8 @@ import UIKit
 struct FileExplorerView: View {
     let session: Session
     let apiClient: APIClient
-    let showsCloseButton: Bool
+    /// A sheet with its own navigation bar, or content beside the chat.
+    let isSheet: Bool
     /// Called with a project-relative path when the user wants to reference a file in
     /// the message they're composing. `nil` hides the reference affordances.
     let onReference: ((String) -> Void)?
@@ -58,47 +59,34 @@ struct FileExplorerView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            ZStack(alignment: .bottom) {
-                Theme.Colors.deepBlack.ignoresSafeArea()
-
-                VStack(spacing: 0) {
-                    searchField
-
-                    Divider()
-                        .overlay(Theme.Colors.hairline)
-
-                    if isSearchActive {
-                        searchContent
-                    } else {
-                        browseContent
-                    }
-                }
-
-                if let notice = referenceNotice {
-                    referenceToast(notice)
-                }
-            }
-            .navigationTitle(displayTitle)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                if showsCloseButton {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Close") { dismiss() }
-                            .foregroundStyle(Theme.Colors.silver)
-                    }
-                }
-                ToolbarItem(placement: .primaryAction) {
-                    if !pathStack.isEmpty && !isSearchActive {
-                        Button {
-                            pathStack.removeLast()
-                            Task { await loadDirectory() }
-                        } label: {
-                            Image(systemName: "arrow.up.doc")
-                                .foregroundStyle(Theme.Colors.silver)
+        Group {
+            if isSheet {
+                NavigationStack {
+                    explorer
+                        .navigationTitle(displayTitle)
+                        .navigationBarTitleDisplayMode(.inline)
+                        .toolbar {
+                            ToolbarItem(placement: .cancellationAction) {
+                                Button("Close") { dismiss() }
+                                    .foregroundStyle(Theme.Colors.silver)
+                            }
+                            ToolbarItem(placement: .primaryAction) {
+                                if !pathStack.isEmpty && !isSearchActive {
+                                    Button {
+                                        pathStack.removeLast()
+                                        Task { await loadDirectory() }
+                                    } label: {
+                                        Image(systemName: "arrow.up.doc")
+                                            .foregroundStyle(Theme.Colors.silver)
+                                    }
+                                }
+                            }
                         }
-                    }
                 }
+            } else {
+                // Beside the chat it's inside the chat's navigation stack: a stack of its own
+                // there pops the chat. The breadcrumb row navigates up instead.
+                explorer
             }
         }
         .presentationBackground(Theme.Colors.carbon)
@@ -122,15 +110,38 @@ struct FileExplorerView: View {
         }
     }
 
+    private var explorer: some View {
+        ZStack(alignment: .bottom) {
+            Theme.Colors.deepBlack.ignoresSafeArea()
+
+            VStack(spacing: 0) {
+                searchField
+
+                Divider()
+                    .overlay(Theme.Colors.hairline)
+
+                if isSearchActive {
+                    searchContent
+                } else {
+                    browseContent
+                }
+            }
+
+            if let notice = referenceNotice {
+                referenceToast(notice)
+            }
+        }
+    }
+
     init(
         session: Session,
         apiClient: APIClient,
-        showsCloseButton: Bool = true,
+        isSheet: Bool = true,
         onReference: ((String) -> Void)? = nil
     ) {
         self.session = session
         self.apiClient = apiClient
-        self.showsCloseButton = showsCloseButton
+        self.isSheet = isSheet
         self.onReference = onReference
     }
 

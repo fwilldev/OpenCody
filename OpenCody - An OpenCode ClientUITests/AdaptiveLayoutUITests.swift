@@ -50,7 +50,12 @@ final class AdaptiveLayoutUITests: XCTestCase {
     private func screenshot(_ name: String) {
         // XCUIScreen only sees the outer display; the host shoots the Duo's inner one.
         duo?.send("shot \(name)")
-        let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        let shot = XCUIScreen.main.screenshot()
+        // `OPENCODY_SHOT_DIR`: also save the PNG on the Mac, for review without the result bundle.
+        if let dir = ProcessInfo.processInfo.environment["OPENCODY_SHOT_DIR"], !dir.isEmpty {
+            try? shot.pngRepresentation.write(to: URL(fileURLWithPath: "\(dir)/\(name).png"))
+        }
+        let attachment = XCTAttachment(screenshot: shot)
         attachment.name = name
         attachment.lifetime = .keepAlways
         add(attachment)
@@ -104,7 +109,7 @@ final class AdaptiveLayoutUITests: XCTestCase {
                 field.typeText(text)
             }
             let hideKeyboard = app.keyboards.buttons["Hide keyboard"].firstMatch
-            if hideKeyboard.exists { hideKeyboard.tap() }
+            if hideKeyboard.exists, hideKeyboard.isHittable { hideKeyboard.tap() }
             scrollTo(app.buttons["Test Connection"]).tap()
             XCTAssertTrue(app.staticTexts["Connection successful"].waitForExistence(timeout: 15), "test connection")
             // Save sits in the sheet's toolbar, which scrolls away with the form on small displays.
@@ -165,5 +170,71 @@ final class AdaptiveLayoutUITests: XCTestCase {
         XCTAssertTrue(chatInput.waitForExistence(timeout: 5), "chat still open after resizing back")
         XCTAssertEqual(chatInput.value as? String, draft)
         screenshot("compact")
+    }
+
+    // MARK: - iPad sidebar layout (OC-IPAD-1)
+
+    /// Launches into the sidebar layout, rotating to landscape where that is needed.
+    private func launchRegular() throws -> (project: String, session: String) {
+        XCUIDevice.shared.orientation = .landscapeLeft
+        let result = try launchConnected()
+        guard isRegularLayout else { throw XCTSkip("Needs the regular-width sidebar layout.") }
+        return result
+    }
+
+    /// The sidebar's server row reads "Connected" once the event stream is up.
+    private func assertServerConnected(_ message: String) {
+        let connected = app.staticTexts["Connected"].firstMatch
+        XCTAssertTrue(connected.waitForExistence(timeout: 10), message)
+    }
+
+    func testInspectorToggleKeepsChat() throws {
+        let (project, session) = try launchRegular()
+        openChat(project: project, session: session)
+
+        app.buttons["Utilities"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["Files"].firstMatch.waitForExistence(timeout: 5), "utilities shown")
+        XCTAssertTrue(chatInput.exists, "chat still open with the utilities")
+        XCTAssertTrue(app.navigationBars[session].exists, "still the session's chat")
+        screenshot("inspector-open")
+
+        app.buttons["Utilities"].firstMatch.tap()
+        XCTAssertTrue(app.buttons["Files"].firstMatch.waitForNonExistence(timeout: 5), "utilities closed")
+        XCTAssertTrue(chatInput.exists, "chat still open without the utilities")
+
+        // The sidebar still navigates.
+        app.staticTexts[project].firstMatch.tap()
+        let row = app.staticTexts[session].firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 10), "session list after reselecting the project")
+        row.tap()
+        XCTAssertTrue(chatInput.waitForExistence(timeout: 10), "chat opens again")
+    }
+
+    func testServerStatusShowsConnected() throws {
+        _ = try launchRegular()
+        assertServerConnected("connected after adding or launching")
+
+        app.terminate()
+        app.launch()
+        dismissPrompts()
+        assertServerConnected("connected after a relaunch")
+        screenshot("server-connected")
+    }
+
+    func testSettingsAndBackKeepsDetail() throws {
+        let (project, session) = try launchRegular()
+        openChat(project: project, session: session)
+
+        for _ in 0..<3 {
+            app.buttons["Settings"].firstMatch.tap()
+            XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 5), "settings shown")
+            app.staticTexts[project].firstMatch.tap()
+            let row = app.staticTexts[session].firstMatch
+            XCTAssertTrue(row.waitForExistence(timeout: 5), "project's session list, not a blank detail")
+            row.tap()
+            XCTAssertTrue(chatInput.waitForExistence(timeout: 10), "chat opens, not a blank or error page")
+            XCTAssertTrue(app.navigationBars[session].exists, "chat of the session")
+        }
+        screenshot("settings-and-back")
     }
 }

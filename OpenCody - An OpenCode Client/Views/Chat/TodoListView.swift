@@ -11,7 +11,8 @@ struct TodoListView: View {
     let session: Session
     let apiClient: APIClient
     let viewModel: ChatViewModel
-    let showsCloseButton: Bool
+    /// A sheet with its own navigation bar, or content beside the chat.
+    let isSheet: Bool
 
     @Environment(\.dismiss) private var dismiss
     @State private var todos: [TodoItem] = []
@@ -19,46 +20,24 @@ struct TodoListView: View {
     @State private var error: String? = nil
 
     var body: some View {
-        NavigationStack {
-            ZStack {
-                Theme.Colors.deepBlack.ignoresSafeArea()
-
-                if isLoading && todos.isEmpty {
-                    ProgressView("Loading todos…")
-                        .tint(Theme.Colors.cyberBlue)
-                        .foregroundStyle(Theme.Colors.silver)
-                } else if let err = error {
-                    VStack(spacing: Theme.Spacing.md) {
-                        Image(systemName: "exclamationmark.triangle")
-                            .font(.title)
-                            .foregroundStyle(Theme.Colors.hotPink)
-                        Text(err)
-                            .font(.subheadline)
-                            .foregroundStyle(Theme.Colors.silver)
-                            .multilineTextAlignment(.center)
-                    }
-                    .padding()
-                } else if todos.isEmpty {
-                    EmptyStateView(
-                        systemImage: "checkmark.circle",
-                        title: "No Todos",
-                        message: "This session has no todos yet."
-                    )
-                } else {
-                    todoList
+        Group {
+            if isSheet {
+                NavigationStack {
+                    todoContent
+                        .navigationTitle("Todos")
+                        // A subtitle, not a trailing bar item: on iPhone Duo the status bar sits at the top right.
+                        .navigationSubtitle("\(todos.filter { $0.status == .pending || $0.status == .inProgress }.count) open")
+                        .navigationBarTitleDisplayMode(.inline)
+                        .toolbar {
+                            ToolbarItem(placement: .cancellationAction) {
+                                Button("Close") { dismiss() }
+                                    .foregroundStyle(Theme.Colors.silver)
+                            }
+                        }
                 }
-            }
-            .navigationTitle("Todos")
-            // A subtitle, not a trailing bar item: on iPhone Duo the status bar sits at the top right.
-            .navigationSubtitle("\(todos.filter { $0.status == .pending || $0.status == .inProgress }.count) open")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                if showsCloseButton {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Close") { dismiss() }
-                            .foregroundStyle(Theme.Colors.silver)
-                    }
-                }
+            } else {
+                // Beside the chat it's inside the chat's navigation stack: no stack or bar of its own.
+                todoContent
             }
         }
         .presentationBackground(Theme.Colors.carbon)
@@ -69,11 +48,42 @@ struct TodoListView: View {
         }
     }
 
-    init(session: Session, apiClient: APIClient, viewModel: ChatViewModel, showsCloseButton: Bool = true) {
+    private var todoContent: some View {
+        ZStack {
+            Theme.Colors.deepBlack.ignoresSafeArea()
+
+            if isLoading && todos.isEmpty {
+                ProgressView("Loading todos…")
+                    .tint(Theme.Colors.cyberBlue)
+                    .foregroundStyle(Theme.Colors.silver)
+            } else if let err = error {
+                VStack(spacing: Theme.Spacing.md) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.title)
+                        .foregroundStyle(Theme.Colors.hotPink)
+                    Text(err)
+                        .font(.subheadline)
+                        .foregroundStyle(Theme.Colors.silver)
+                        .multilineTextAlignment(.center)
+                }
+                .padding()
+            } else if todos.isEmpty {
+                EmptyStateView(
+                    systemImage: "checkmark.circle",
+                    title: "No Todos",
+                    message: "This session has no todos yet."
+                )
+            } else {
+                todoList
+            }
+        }
+    }
+
+    init(session: Session, apiClient: APIClient, viewModel: ChatViewModel, isSheet: Bool = true) {
         self.session = session
         self.apiClient = apiClient
         self.viewModel = viewModel
-        self.showsCloseButton = showsCloseButton
+        self.isSheet = isSheet
     }
 
     private var todoList: some View {
