@@ -151,7 +151,7 @@ final class PushTests: XCTestCase {
         XCTAssertEqual(content.categoryIdentifier, "OC_SESSION")
     }
 
-    // MARK: - Dedupe with local alerts
+    // MARK: - Dedupe
 
     func testDedupeKeys() {
         XCTAssertTrue(AlertKey.isDuplicate("req:per_1", "req:per_1"))
@@ -166,31 +166,29 @@ final class PushTests: XCTestCase {
         XCTAssertFalse(AlertKey.isDuplicate("req:ses_1@1000", "~ses_1@1000"))
     }
 
-    func testIdentifierIsTheCollapseIDOfTheKey() {
-        // Vectors from SPEC.md §5.1; the plugin sends the same value as apns-collapse-id.
-        XCTAssertEqual(AlertKey.identifier("ses_1@1767225600000"), "e622b83c47b5acbee7da0fed1f4e1818")
-        XCTAssertEqual(AlertKey.identifier("req:per_456"), "6bec7729bb16ff4d8cbe3f0c25079359")
+    func testLedgerQuietsRepeatedPushes() throws {
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: "PushTests.ledger"))
+        defaults.removePersistentDomain(forName: "PushTests.ledger")
+        XCTAssertTrue(NotificationLedger(defaults: defaults).insert("ses_1@2000"))
+        XCTAssertFalse(NotificationLedger(defaults: defaults).insert("ses_1@2000"))
+        XCTAssertFalse(NotificationLedger(defaults: defaults).insert("~ses_1@2400"))
+        XCTAssertTrue(NotificationLedger(defaults: defaults).insert("ses_1@3000"))
+
+        let bounded = NotificationLedger(defaults: defaults, capacity: 2)
+        for key in ["a", "b", "c"] { bounded.insert(key) }
+        XCTAssertTrue(bounded.insert("a"))
     }
 
-    func testLocalAlertsUseSharedCategoriesAndKeys() {
-        let raw = SessionAlert.from(v2Event: "permission.asked", data: ["id": "per_1", "sessionID": "ses_child", "action": "bash"])!
-        let state = V2SessionState(json: ["id": "ses_child", "parentID": "ses_root"])!
-        let alert = raw.resolved(with: state)!
-        let request = NotificationContent.requests(for: [alert], server: server)[0]
-        XCTAssertEqual(request.identifier, AlertKey.identifier("req:per_1"))
-        XCTAssertEqual(request.content.categoryIdentifier, "OC_PERMISSION")
-        XCTAssertEqual(request.content.userInfo["dedupe"] as? String, "req:per_1")
-        XCTAssertEqual(request.content.userInfo["sessionID"] as? String, "ses_root")
-        XCTAssertEqual(request.content.userInfo["replySessionID"] as? String, "ses_child")
-        XCTAssertEqual(request.content.userInfo["requestID"] as? String, "per_1")
-    }
+    // MARK: - Settings
 
-    func testFreshAlertsSkipDelivered() {
-        let alerts = [
-            SessionAlert(kind: .finished, sessionID: "ses_1", key: "ses_1@1000"),
-            SessionAlert(kind: .permission, sessionID: "ses_2", requestID: "per_9", key: "req:per_9"),
-        ]
-        XCTAssertEqual(AlertKey.fresh(alerts, delivered: ["~ses_1@1200"]).map(\.key), ["req:per_9"])
+    func testPushStatusPerServer() {
+        let pairing = PushPairing(serverID: server, relay: "r", deviceId: "d", secret: "s", key: Data(), token: "t", env: "production")
+        var broken = pairing
+        broken.broken = true
+        XCTAssertEqual(PushStatus(apiVersion: .v1, pairing: pairing), .unsupported)
+        XCTAssertEqual(PushStatus(apiVersion: .v2, pairing: nil), .off)
+        XCTAssertEqual(PushStatus(apiVersion: .v2, pairing: pairing), .paired)
+        XCTAssertEqual(PushStatus(apiVersion: .v2, pairing: broken), .broken)
     }
 
     // MARK: - Actions (§6.5)

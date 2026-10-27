@@ -3,23 +3,18 @@ import SwiftUI
 struct RootView: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.scenePhase) private var scenePhase
-    @State private var router: AppRouter
+    @State private var router = AppRouter()
     @State private var connectionManager: ConnectionManager
     @StateObject private var serverStore = ServerStoreModel()
     /// Shared by both layouts, so a resize keeps the loaded projects.
     @State private var dashboardViewModel: DashboardViewModel
-
-    @State private var notificationManager: SessionNotificationManager
 
     /// Release notes, shown once per release.
     @State private var showWhatsNew = false
 
     init() {
         let connectionManager = ConnectionManager()
-        let router = AppRouter()
-        _router = State(initialValue: router)
         _connectionManager = State(initialValue: connectionManager)
-        _notificationManager = State(initialValue: SessionNotificationManager(connectionManager: connectionManager, router: router))
         _dashboardViewModel = State(initialValue: DashboardViewModel(connectionManager: connectionManager))
     }
 
@@ -29,16 +24,6 @@ struct RootView: View {
         .background(Theme.Colors.deepBlack)
         .onChange(of: scenePhase) { _, newPhase in
             connectionManager.handleScenePhaseChange(newPhase)
-            if newPhase == .background {
-                BackgroundRefreshService.shared.scheduleAppRefresh()
-            } else if newPhase == .active {
-                KeychainService.allowBackgroundAccess()
-                Task { await notificationManager.becameActive() }
-            }
-        }
-        .onChange(of: router.selectedSession) { _, sessionID in
-            guard let sessionID else { return }
-            Task { await notificationManager.markViewed(sessionID) }
         }
         .onChange(of: NotificationDelegate.shared.pendingLink, initial: true) { _, link in
             guard let link else { return }
@@ -66,13 +51,6 @@ struct RootView: View {
             await TipPromptService.shared.refreshHasTippedFromStoreKit()
 
             NotificationDelegate.shared.viewingSessionID = { [router] in router.selectedSession }
-            notificationManager.startObserving()
-            // A cold launch can be active before the scene phase changes.
-            KeychainService.allowBackgroundAccess()
-            await notificationManager.becameActive()
-        }
-        .onDisappear {
-            notificationManager.stopObserving()
         }
         .sheet(isPresented: $showWhatsNew) {
             WhatsNewView()

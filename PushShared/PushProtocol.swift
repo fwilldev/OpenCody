@@ -98,7 +98,7 @@ nonisolated struct PushMessage: Codable, Equatable, Sendable {
     var title: String?
     var text: String
     var requestID: String?
-    /// Dedupe key from plugin 0.2.0 on, identical to the local alert's (§5.1).
+    /// Dedupe key from plugin 0.2.0 on (§5.1).
     var key: String?
     var ts: Double
 
@@ -114,7 +114,7 @@ nonisolated struct PushMessage: Codable, Equatable, Sendable {
     /// The session to open; requests from subagents are answered in their parent.
     var openSessionID: String { rootSessionID ?? sessionID }
 
-    /// Presentation from §6.4, plus the same `userInfo` keys local alerts carry.
+    /// Presentation from §6.4, plus the `userInfo` keys for deep links and actions.
     func apply(to content: UNMutableNotificationContent, serverID: UUID) {
         content.title = title ?? "OpenCode"
         let folder = directory.map { URL(fileURLWithPath: $0).lastPathComponent }.flatMap { $0.isEmpty ? nil : $0 }
@@ -140,7 +140,7 @@ nonisolated struct PushMessage: Codable, Equatable, Sendable {
     }
 }
 
-/// One set of category IDs for local and push notifications, fixed by the relay (§6.5).
+/// Category IDs, fixed by the relay (§6.5).
 nonisolated enum NotificationCategory {
     static let session = "OC_SESSION"
     static let permission = "OC_PERMISSION"
@@ -155,7 +155,7 @@ nonisolated enum NotificationCategory {
     }
 }
 
-/// Dedupe keys shared by local alerts and pushes, stored in `userInfo["dedupe"]`:
+/// Dedupe keys of pushes, stored in `userInfo["dedupe"]`:
 /// `req:<id>` for requests, `<sessionID>@<idle ms>` for finished or failed runs.
 /// Pushes without a `key` get `~<sessionID>@<event ms>`, which only matches within a time window.
 nonisolated enum AlertKey {
@@ -167,12 +167,6 @@ nonisolated enum AlertKey {
         if let key = message.key { return key }
         if let requestID = message.requestID { return "req:\(requestID)" }
         return "~\(message.sessionID)@\(Int64(message.ts))"
-    }
-
-    /// Notification identifier for a key; the plugin sends the same as `apns-collapse-id`,
-    /// so a push replaces the local alert it duplicates.
-    static func identifier(_ key: String) -> String {
-        SHA256.hash(data: Data(key.utf8)).map { String(format: "%02x", $0) }.joined().prefix(32).description
     }
 
     static func isDuplicate(_ a: String, _ b: String) -> Bool {

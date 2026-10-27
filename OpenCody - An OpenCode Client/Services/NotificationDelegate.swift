@@ -1,6 +1,26 @@
 import Foundation
 import UserNotifications
 
+/// Where tapping a notification leads; carried in its `userInfo`.
+nonisolated struct DeepLink: Equatable, Sendable {
+    let serverID: UUID
+    let directory: String?
+    let sessionID: String
+
+    init(serverID: UUID, directory: String?, sessionID: String) {
+        self.serverID = serverID
+        self.directory = directory
+        self.sessionID = sessionID
+    }
+
+    init?(userInfo: [AnyHashable: Any]) {
+        guard let server = (userInfo["serverID"] as? String).flatMap(UUID.init(uuidString:)),
+              let sessionID = userInfo["sessionID"] as? String
+        else { return nil }
+        self.init(serverID: server, directory: userInfo["directory"] as? String, sessionID: sessionID)
+    }
+}
+
 /// Shows notifications while the app is open, opens their session when tapped and
 /// answers permissions from the notification's buttons.
 /// Installed at launch, so the tap that launched the app is not lost.
@@ -28,8 +48,7 @@ final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
         let sessionID = info["sessionID"] as? String
         let viewing = await MainActor.run { viewingSessionID() }
         if sessionID != nil && sessionID == viewing { return [] }
-        // A push the live connection already announced; the extension marked it passive
-        // and removed the local copy, so it only takes that place in the list.
+        // A push shown before; the extension marked it passive and removed the older copy.
         if info["opencody"] != nil, notification.request.content.interruptionLevel == .passive { return [.list] }
         return [.banner, .sound, .list]
     }
@@ -66,7 +85,7 @@ final class NotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
     }
 }
 
-/// Buttons on permission notifications (SPEC §6.5), local and push alike.
+/// Buttons on permission notifications (SPEC §6.5).
 nonisolated enum PermissionAction: String, CaseIterable {
     case once = "PERMISSION_ONCE"
     case always = "PERMISSION_ALWAYS"

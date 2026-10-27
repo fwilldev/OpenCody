@@ -6,6 +6,8 @@ struct RouteDestination: View {
     let viewModel: DashboardViewModel
     let connectionManager: ConnectionManager
 
+    @EnvironmentObject private var serverStore: ServerStoreModel
+
     var body: some View {
         switch route {
         case .project(let directory):
@@ -32,6 +34,10 @@ struct RouteDestination: View {
             LicensesView()
         case .settings(.privacy):
             PrivacyPolicyView()
+        case .settings(.push(let id)):
+            if let server = serverStore.servers.first(where: { $0.id == id }) {
+                PushSetupView(server: server)
+            }
         }
     }
 

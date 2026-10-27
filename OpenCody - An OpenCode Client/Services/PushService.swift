@@ -184,7 +184,7 @@ final class PushService {
     /// Pushes a self-encrypted message through relay, APNs and the extension, without the server (§6.1.7).
     func sendTest(_ pairing: PushPairing, serverName: String) async throws {
         let message = PushMessage(
-            v: 1, type: SessionAlert.Kind.finished.rawValue, server: serverName, sessionID: "",
+            v: 1, type: "session.finished", server: serverName, sessionID: "",
             title: "OpenCody", text: "Test notification. Push works for this server.",
             ts: (Date().timeIntervalSince1970 * 1000).rounded()
         )
@@ -192,6 +192,26 @@ final class PushService {
         try await PushRelay(base: pairing.relay).push(
             deviceId: pairing.deviceId, secret: pairing.secret, category: NotificationCategory.session, ciphertext: ciphertext
         )
+    }
+}
+
+/// Whether a server can reach this iPhone by push.
+nonisolated enum PushStatus: Equatable {
+    case unsupported, off, paired, broken
+
+    init(apiVersion: ServerAPIVersion, pairing: PushPairing?) {
+        self = if apiVersion != .v2 { .unsupported }
+            else if let pairing { pairing.broken ? .broken : .paired }
+            else { .off }
+    }
+
+    var label: String {
+        switch self {
+        case .unsupported: "Needs OpenCode 2"
+        case .off: "Not paired"
+        case .paired: "Paired"
+        case .broken: "Pairing stopped working"
+        }
     }
 }
 
