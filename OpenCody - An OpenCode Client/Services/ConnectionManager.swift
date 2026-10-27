@@ -35,9 +35,14 @@ final class ConnectionManager {
 
     // MARK: - Ignored State (no SwiftUI re-renders)
 
-    /// All live connections keyed by server ID.
-    @ObservationIgnored
+    /// All live connections keyed by server ID. Observed: views read a server's status through
+    /// its connection, so they must hear about one being stored, replaced or removed.
     private var connections: [UUID: ActiveConnection] = [:]
+
+    /// Servers whose `connectAndActivate` is still connecting, so a second call doesn't open a
+    /// second connection that replaces the first one under views already observing it.
+    @ObservationIgnored
+    private var pendingActivations: Set<UUID> = []
 
     /// Directory filter for SSE events (scoped to a project worktree).
     @ObservationIgnored
@@ -192,7 +197,8 @@ final class ConnectionManager {
         // 4. Start SSE listening
         eventService.startListening(apiClient: apiClient, directoryFilter: activeEventDirectory)
 
-        // 5. Store connection
+        // 5. Store connection, closing any it replaces
+        connections[serverID]?.eventService.stopListening()
         connections[serverID] = ActiveConnection(
             server: server,
             apiClient: apiClient,
@@ -243,8 +249,10 @@ final class ConnectionManager {
             activeServerID = server.id
             return
         }
+        guard pendingActivations.insert(server.id).inserted else { return }
         let password = (try? KeychainService.retrieve(for: server.keychainIdentifier)) ?? ""
         Task {
+            defer { pendingActivations.remove(server.id) }
             do {
                 try await connect(server: server, password: password)
             } catch {

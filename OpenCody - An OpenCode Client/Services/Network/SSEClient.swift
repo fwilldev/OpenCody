@@ -58,6 +58,8 @@ final class SSEClient {
     let heartbeatTimeout: TimeInterval
 
     private var eventSource: EventSource?
+    /// Identifies the current `start()`; callbacks of earlier sources are dropped.
+    private var generation: UUID?
 
     /// Serial event stream — events from LDSwiftEventSource's DispatchQueue are
     /// funnelled through this stream so that MainActor receives them in strict order.
@@ -146,8 +148,14 @@ final class SSEClient {
             v2Continuation = nil
         }
 
-        // Capture callbacks and state for use in the nonisolated handler
-        let onStateChange = self.onStateChange
+        // Capture callbacks and state for use in the nonisolated handler.
+        // A stopped source still reports its close; only the current one may change the state.
+        let generation = UUID()
+        self.generation = generation
+        let onStateChange: @MainActor (SSEClientState) -> Void = { [weak self] state in
+            guard let self, self.generation == generation else { return }
+            self.onStateChange(state)
+        }
         let normalizeEventFn = self.normalizeEvent(eventName:data:)
         let shouldHandleEventFn = self.shouldHandleEvent(data:)
         let maxAttempts = self.maxReconnectAttempts
@@ -247,6 +255,7 @@ final class SSEClient {
     }
 
     func stop() {
+        generation = nil
         heartbeatTask?.cancel()
         heartbeatTask = nil
         eventConsumerTask?.cancel()
@@ -275,10 +284,9 @@ final class SSEClient {
         #if DEBUG
         print("[SSEClient] Reconnecting (heartbeat/foreground)")
         #endif
-        // Stop & restart the underlying EventSource.
-        // LDSwiftEventSource handles creating a new TCP connection.
-        eventSource?.stop()
-        eventSource?.start()
+        // An `EventSource` can't start again once stopped, so open a new one.
+        stop()
+        start()
         lastActivityAt.touch()
     }
 
